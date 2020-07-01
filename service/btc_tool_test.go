@@ -36,7 +36,7 @@ func TestMyTx(t *testing.T) {
 	log.Println(hex.EncodeToString(bytes))
 
 	//create multisig address
-	hash, err := btcutil.NewAddressScriptHash(bytes, &chaincfg.TestNet3Params)
+	hash, err := btcutil.NewAddressScriptHash(bytes, &chaincfg.RegressionNetParams)
 	log.Println(hash)
 
 }

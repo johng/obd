@@ -44,13 +44,13 @@ func GenerateBTC() (string, string, error) {
 		return "", "", err
 	}
 
-	privKeyWif, err := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, false)
+	privKeyWif, err := btcutil.NewWIF(privKey, &chaincfg.RegressionNetParams, false)
 	if err != nil {
 		return "", "", err
 	}
 	pubKeySerial := privKey.PubKey().SerializeUncompressed()
 
-	pubKeyAddress, err := btcutil.NewAddressPubKey(pubKeySerial, &chaincfg.MainNetParams)
+	pubKeyAddress, err := btcutil.NewAddressPubKey(pubKeySerial, &chaincfg.RegressionNetParams)
 	if err != nil {
 		return "", "", err
 	}
@@ -64,13 +64,13 @@ func GenerateBTCTest() (string, string, error) {
 		return "", "", err
 	}
 
-	privKeyWif, err := btcutil.NewWIF(privKey, &chaincfg.TestNet3Params, false)
+	privKeyWif, err := btcutil.NewWIF(privKey, &chaincfg.RegressionNetParams, false)
 	if err != nil {
 		return "", "", err
 	}
 	pubKeySerial := privKey.PubKey().SerializeUncompressed()
 
-	pubKeyAddress, err := btcutil.NewAddressPubKey(pubKeySerial, &chaincfg.TestNet3Params)
+	pubKeyAddress, err := btcutil.NewAddressPubKey(pubKeySerial, &chaincfg.RegressionNetParams)
 	if err != nil {
 		return "", "", err
 	}
@@ -89,7 +89,7 @@ func createTx() {
 	outputs := []*wire.TxOut{}
 
 	// 1.1 输出1, 给自己转剩下的钱
-	addr, _ := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	outputs = append(outputs, wire.NewTxOut(leftToMe, pkScript))
 
@@ -274,7 +274,7 @@ func buildRawTx() *wire.MsgTx {
 	pubKeyHash, _ := hex.DecodeString("b5407cec767317d41442aab35bad2712626e17ca")
 	log.Println(pubKeyHash)
 	address := "mx3KrUjRzzqYTcsyyvWBiHBncLrrTPXnkV"
-	addr, _ := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	log.Println(addr.ScriptAddress())
 	log.Println(hex.EncodeToString(addr.ScriptAddress()))
 
@@ -343,13 +343,13 @@ func CreateTransaction(secret string, destination string, amount int64, txHash s
 	if err != nil {
 		return Transaction{}, err
 	}
-	addresspubkey, _ := btcutil.NewAddressPubKey(wif.PrivKey.PubKey().SerializeUncompressed(), &chaincfg.MainNetParams)
+	addresspubkey, _ := btcutil.NewAddressPubKey(wif.PrivKey.PubKey().SerializeUncompressed(), &chaincfg.RegressionNetParams)
 	sourceTx := wire.NewMsgTx(wire.TxVersion)
 	sourceUtxoHash, _ := chainhash.NewHashFromStr(txHash)
 	sourceUtxo := wire.NewOutPoint(sourceUtxoHash, 0)
 	sourceTxIn := wire.NewTxIn(sourceUtxo, nil, nil)
-	destinationAddress, err := btcutil.DecodeAddress(destination, &chaincfg.MainNetParams)
-	sourceAddress, err := btcutil.DecodeAddress(addresspubkey.EncodeAddress(), &chaincfg.MainNetParams)
+	destinationAddress, err := btcutil.DecodeAddress(destination, &chaincfg.RegressionNetParams)
+	sourceAddress, err := btcutil.DecodeAddress(addresspubkey.EncodeAddress(), &chaincfg.RegressionNetParams)
 	if err != nil {
 		return Transaction{}, err
 	}
@@ -450,14 +450,14 @@ func createMyTx() {
 	//一共有0.00100000，也即：67000  给新的地址5000 给自己留下 66000 500 miner fee
 	changeAddr := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
 	// 1.1 输出1, 给自己转剩下的钱
-	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	tx.AddTxOut(wire.NewTxOut(66000, pkScript))
 
 	//第二个地址
 	address := "mtRoRNpVYhMRYPjoz8u9Eqnmm5LqyDzXgh"
 	address = "2N5NiNgsyLaQrXGJb5g6zXLnarTqfKt5Znb"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pubKeyHash := addr.ScriptAddress()
 
 	//pubKeyHash ,_= hex.DecodeString("705655d302793524d7907c29ad715b999dddc587")
@@ -510,13 +510,13 @@ func createMyTx2() {
 
 	// 1.1 输出1, 给自己转剩下的钱
 	address := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
-	addr, _ := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	outputs = append(outputs, wire.NewTxOut(leftToMe, pkScript))
 
 	// 1.2 输出2, 给新的地址 mtRoRNpVYhMRYPjoz8u9Eqnmm5LqyDzXgh
 	address = "mtRoRNpVYhMRYPjoz8u9Eqnmm5LqyDzXgh"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pkScript, _ = txscript.PayToAddrScript(addr)
 	outputs = append(outputs, wire.NewTxOut(outAmount, pkScript))
 
@@ -606,7 +606,7 @@ func CreateCustomSpendTxForScriptHash() {
 	tx.AddTxIn(wire.NewTxIn(&point, unlock, nil))
 
 	address := "mtRoRNpVYhMRYPjoz8u9Eqnmm5LqyDzXgh"
-	addr, _ := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pubKeyHash := addr.ScriptAddress()
 	lock, _ := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_DUP).

@@ -44,8 +44,9 @@ func (service *hdWalletManager) GetAddressByIndex(user *bean.User, index uint32)
 
 func getWalletObj(addrIndexExtKey *bip32.Key, wallet *Wallet) (err error) {
 	net := &chaincfg.MainNetParams
-	if config.ChainNode_Type == "test" {
-		net = &chaincfg.TestNet3Params
+
+	if config.ChainNode_Type == "regtest" {
+		net = &chaincfg.RegressionNetParams
 	}
 	hash160Bytes := btcutil.Hash160(addrIndexExtKey.PublicKey().Key)
 	addr, err := btcutil.NewAddressPubKeyHash(hash160Bytes, net)
@@ -101,7 +102,7 @@ func (service *hdWalletManager) CreateChangeExtKey(mnemonic string) (changeExtKe
 	purposeExtKey, _ := masterKey.NewChildKey(bip32.FirstHardenedChild + 44)
 	//m/purpose'/cointype'
 	coinType := 0
-	if config.ChainNode_Type == "test" {
+	if config.ChainNode_Type == "regtest" {
 		coinType = 1
 	}
 	coinTypeExtKey, err := purposeExtKey.NewChildKey(bip32.FirstHardenedChild + uint32(coinType))

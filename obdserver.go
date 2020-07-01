@@ -65,7 +65,7 @@ func main() {
 	}
 
 	routersInit := lightclient.InitRouter(nil)
-	addr := ":" + strconv.Itoa(config.ServerPort)
+	addr := "localhost:" + strconv.Itoa(config.ServerPort)
 	server := &http.Server{
 		Addr:           addr,
 		Handler:        routersInit,

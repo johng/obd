@@ -47,7 +47,7 @@ func Test_Demo1(t *testing.T) {
 	acc44H60H0H0, _ := acc44H60H0H.Child(0)
 	// This gives the path: m/44H/60H/0H/0/0
 	acc44H60H0H00, _ := acc44H60H0H0.Child(0)
-	addr, _ := acc44H60H0H00.Address(&chaincfg.TestNet3Params)
+	addr, _ := acc44H60H0H00.Address(&chaincfg.RegressionNetParams)
 	log.Println(addr)
 	btcecPrivKey, _ := acc44H60H0H00.ECPrivKey()
 

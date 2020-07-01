@@ -46,7 +46,7 @@ func CreateCustomMuiltAddress() {
 	log.Println(err)
 	log.Println(decodeScript)
 	//create multisig address
-	hash, err := btcutil.NewAddressScriptHash(bytes, &chaincfg.TestNet3Params)
+	hash, err := btcutil.NewAddressScriptHash(bytes, &chaincfg.RegressionNetParams)
 	log.Println(hash)
 
 	result, err := rpcClient.DecodeScript("5141042f90074d7a5bf30c72cf3a8dfd1381bdbd30407010e878f3a11269d5f74a58788505cdca22ea6eab7cfb40dc0e07aba200424ab0d79122a653ad0c7ec9896bdf51ae")
@@ -71,7 +71,7 @@ func CreateCustomP2SHTx() {
 	changeAddr := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
 
 	// 找零
-	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	tx.AddTxOut(wire.NewTxOut(int64(amount-3000), pkScript))
 	result, _ := rpcClient.DecodeScript(hex.EncodeToString(pkScript))
@@ -79,7 +79,7 @@ func CreateCustomP2SHTx() {
 
 	//支出
 	address := "2N6h1Vz8Ate9zH2LvpBi5EQUy5b42bf9RGk"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pkScript, _ = txscript.PayToAddrScript(addr)
 
 	result, _ = rpcClient.DecodeScript(hex.EncodeToString(pkScript))
@@ -124,13 +124,13 @@ func CreateCustomP2SHSpendTx() {
 	amount := 2000
 	// 支付给对方
 	changeAddr := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
-	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	tx.AddTxOut(wire.NewTxOut(int64(500), pkScript))
 
 	//找零
 	address := "2N6h1Vz8Ate9zH2LvpBi5EQUy5b42bf9RGk"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pkScript, _ = txscript.PayToAddrScript(addr)
 	tx.AddTxOut(wire.NewTxOut(int64(amount-500-500), pkScript))
 
@@ -140,9 +140,9 @@ func CreateCustomP2SHSpendTx() {
 	localKey0 := (*btcec.PublicKey)(&wif0.PrivKey.PublicKey)
 	localKey1 := (*btcec.PublicKey)(&wif1.PrivKey.PublicKey)
 	pk0 := (*btcec.PublicKey)(&wif0.PrivKey.PublicKey).SerializeCompressed()
-	addr0, err := btcutil.NewAddressPubKey(pk0, &chaincfg.TestNet3Params)
+	addr0, err := btcutil.NewAddressPubKey(pk0, &chaincfg.RegressionNetParams)
 	pk1 := (*btcec.PublicKey)(&wif1.PrivKey.PublicKey).SerializeCompressed()
-	addr1, err := btcutil.NewAddressPubKey(pk1, &chaincfg.TestNet3Params)
+	addr1, err := btcutil.NewAddressPubKey(pk1, &chaincfg.RegressionNetParams)
 
 	//生成多签地址 得到redeemscript
 	redeemScriptStr := "538752210316034bfadc098d3abdf9069d305576dcf70b53ab95fa4a3e911a31f4376641af2102c4483151ede561fa04e465b47db1c0309af7f1afe753baedaac46a2d2e2a73c852ae"
@@ -151,7 +151,7 @@ func CreateCustomP2SHSpendTx() {
 
 	//得到多签地址
 	address = "2N68VtKEQZLaot4Q97Q2EW5wSiyYZbVoSBq"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	//得到输出脚本
 	scriptPkScript, err := txscript.PayToAddrScript(addr)
 	if err != nil {
@@ -182,7 +182,7 @@ func CreateCustomP2SHSpendTx() {
 		log.Println("unable to create p2wsh htlc script: ", err)
 	}
 
-	sigScript, err := txscript.SignTxOutput(&chaincfg.TestNet3Params, tx, 0, scriptPkScript, txscript.SigHashAll, mkGetKey(map[string]addressToKey{
+	sigScript, err := txscript.SignTxOutput(&chaincfg.RegressionNetParams, tx, 0, scriptPkScript, txscript.SigHashAll, mkGetKey(map[string]addressToKey{
 		addr0.EncodeAddress(): {wif0.PrivKey, true},
 		addr1.EncodeAddress(): {wif1.PrivKey, true},
 	}), mkGetScript(map[string][]byte{

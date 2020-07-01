@@ -29,13 +29,13 @@ func CreateP2PKHTx() {
 	//一共有0.00100000，也即：66000  给新的地址2000 给自己留下 63000 1000 miner fee
 	changeAddr := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
 	// 1.1 输出1, 给自己转剩下的钱
-	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(changeAddr, &chaincfg.RegressionNetParams)
 	pkScript, _ := txscript.PayToAddrScript(addr)
 	tx.AddTxOut(wire.NewTxOut(63000, pkScript))
 
 	//第二个地址 "wif":"cVEQD3Wm9pdpmAjHz3AuA5uGqZVgEt2kKbVrwUwRTsyLx9z12KvT"
 	address := "n2Lo7zwvek2NHmvHSD85WARKSfYwJxofve"
-	addr, _ = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ = btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pubKeyHash := addr.ScriptAddress()
 
 	lock, _ := txscript.NewScriptBuilder().
@@ -74,7 +74,7 @@ func CreateP2PKHSpendTx() {
 
 	//第一个输出
 	address := "mp2CSq75LdESK3NFUik7ZAbh1efgXYbnzM"
-	addr, _ := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	addr, _ := btcutil.DecodeAddress(address, &chaincfg.RegressionNetParams)
 	pubKeyHash := addr.ScriptAddress()
 	lock, _ := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_DUP).

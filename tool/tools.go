@@ -71,11 +71,11 @@ func GetAddressFromPubKey(pubKey string) (address string, err error) {
 		log.Println(err)
 		return "", errors.New("invalid pubkey")
 	}
-	// test TestNet3Params
+	// test RegressionNetParams
 	// main MainNetParams
 	var net *chaincfg.Params
-	if config.ChainNode_Type == "test" {
-		net = &chaincfg.TestNet3Params
+	if config.ChainNode_Type == "regtest" {
+		net = &chaincfg.RegressionNetParams
 	} else {
 		net = &chaincfg.MainNetParams
 	}
