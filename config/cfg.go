@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	//Cfg               *ini.File
 	configPath        = flag.String("configPath", "config/conf.ini", "Config file path")
 	ServerPort        = 60020
 	ReadTimeout       = 5 * time.Second
@@ -35,6 +36,7 @@ func init() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
+	//Cfg, err := ini.Load(*configPath)
 	Cfg, err := ini.Load(*configPath)
 	if err != nil {
 		log.Println(err)
@@ -57,16 +59,6 @@ func init() {
 	ChainNode_Host = chainNode.Key("host").String()
 	ChainNode_User = chainNode.Key("user").String()
 	ChainNode_Pass = chainNode.Key("pass").String()
-	if ChainNode_Type == "main" {
-		chainNodeMain, err := Cfg.GetSection("chainNodeMain")
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		ChainNode_Host = chainNodeMain.Key("host").String()
-		ChainNode_User = chainNodeMain.Key("user").String()
-		ChainNode_Pass = chainNodeMain.Key("pass").String()
-	}
 	if len(ChainNode_Host) == 0 {
 		log.Println("empty omnicore host")
 		return

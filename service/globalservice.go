@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/asdine/storm"
@@ -29,12 +30,12 @@ var TrackerWsConn *websocket.Conn
 
 //for store the privateKey
 var tempAddrPrivateKeyMap = make(map[string]string)
-var OnlineUserMap = make(map[string]bool)
+var OnlineUserMap = make(map[string]*bean.User)
 
 func findUserIsOnline(peerId string) error {
 	if tool.CheckIsString(&peerId) {
 		value, exists := OnlineUserMap[peerId]
-		if exists && value == true {
+		if exists && value != nil {
 			return nil
 		}
 	}
@@ -165,6 +166,7 @@ func createRDTx(owner string, channelInfo *dao.ChannelInfo, commitmentTxInfo *da
 	rda.Owner = owner
 
 	//input
+	rda.InputTxHex = commitmentTxInfo.RSMCTxHex
 	rda.InputTxid = commitmentTxInfo.RSMCTxid
 	rda.InputVout = 0
 	rda.InputAmount = commitmentTxInfo.AmountToRSMC
@@ -346,7 +348,9 @@ func getInputsForNextTxByParseTxHashVout(hex string, toAddress, scriptPubKey, re
 				}
 			}
 		}
-		return inputs, nil
+		if len(inputs) > 0 {
+			return inputs, nil
+		}
 	}
 	return nil, errors.New("no inputs")
 }
@@ -395,7 +399,7 @@ func getFundingTransactionByChannelId(dbTx storm.Node, channelId string, userPee
 
 func signRdTx(tx storm.Node, channelInfo *dao.ChannelInfo, signedRsmcHex string, rdHex string, latestCommitmentTxInfo *dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
 	inputs, err := getInputsForNextTxByParseTxHashVout(signedRsmcHex, latestCommitmentTxInfo.RSMCMultiAddress, latestCommitmentTxInfo.RSMCMultiAddressScriptPubKey, latestCommitmentTxInfo.RSMCRedeemScript)
-	if err != nil {
+	if err != nil || len(inputs) == 0 {
 		log.Println(err)
 		return err
 	}
@@ -436,7 +440,7 @@ func signRdTx(tx storm.Node, channelInfo *dao.ChannelInfo, signedRsmcHex string,
 
 func signHTD1bTx(tx storm.Node, signedHtlcHex string, htd1bHex string, latestCcommitmentTxInfo dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
 	inputs, err := getInputsForNextTxByParseTxHashVout(signedHtlcHex, latestCcommitmentTxInfo.HTLCMultiAddress, latestCcommitmentTxInfo.HTLCMultiAddressScriptPubKey, latestCcommitmentTxInfo.HTLCRedeemScript)
-	if err != nil {
+	if err != nil || len(inputs) == 0 {
 		log.Println(err)
 		return err
 	}
@@ -465,6 +469,7 @@ func signHTD1bTx(tx storm.Node, signedHtlcHex string, htd1bHex string, latestCco
 	htlcTimeoutDeliveryTx.CommitmentTxId = latestCcommitmentTxInfo.Id
 	htlcTimeoutDeliveryTx.PropertyId = latestCcommitmentTxInfo.PropertyId
 	htlcTimeoutDeliveryTx.OutputAddress = outputAddress
+	htlcTimeoutDeliveryTx.InputTxid = latestCcommitmentTxInfo.HTLCTxid
 	htlcTimeoutDeliveryTx.InputHex = latestCcommitmentTxInfo.HtlcTxHex
 	htlcTimeoutDeliveryTx.OutAmount = latestCcommitmentTxInfo.AmountToHtlc
 	htlcTimeoutDeliveryTx.Owner = owner
@@ -648,11 +653,13 @@ func sendMsgToTracker(msgType enum.MsgType, data interface{}) {
 
 	dataBytes, _ := json.Marshal(data)
 	dataStr := string(dataBytes)
+
 	parse := gjson.Parse(dataStr)
 	result := parse.Value()
-	if result == nil || parse.Exists() == false {
+	if strings.HasPrefix(dataStr, "{") == false && strings.HasPrefix(dataStr, "[") == false {
 		result = dataStr
 	}
+
 	message.Data = result
 
 	bytes, _ := json.Marshal(message)

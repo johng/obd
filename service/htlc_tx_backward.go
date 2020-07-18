@@ -147,11 +147,12 @@ func (service *htlcBackwardTxManager) SendRToPreviousNode_Step1(msg bean.Request
 
 	htlcTimeOut := latestCommitmentTxInfo.HtlcCltvExpiry
 	maxHeight := latestCommitmentTxInfo.BeginBlockHeight + htlcTimeOut
-	if config.ChainNode_Type == "mainnet" {
+	if strings.Contains(config.ChainNode_Type, "main") {
 		if currBlockHeight > maxHeight {
 			return nil, errors.New("timeout, can't transfer the R")
 		}
 	}
+
 	tempAddrPrivateKeyMap[reqData.CurrHtlcTempAddressForHE1bPubKey] = reqData.CurrHtlcTempAddressForHE1bPrivateKey
 
 	he1b, err := createHe1bAtPayeeSide_at45(tx, *channelInfo, latestCommitmentTxInfo.Id, *reqData, user)
@@ -423,7 +424,7 @@ func (service *htlcBackwardTxManager) SignHed1aAndUpdate_Step4(msgData string, u
 	//region 1 签名hed1a
 	hlockMultiAddress, hlockRedeemScript, hlockMultiAddressScriptPubKey, err := createMultiSig(commitmentTxInfo.HtlcH, payeeChannelPubKey)
 	payerHLockOutputs, err := getInputsForNextTxByParseTxHashVout(payerHlockTxHex, hlockMultiAddress, hlockMultiAddressScriptPubKey, hlockRedeemScript)
-	if err != nil {
+	if err != nil || len(payerHLockOutputs) == 0 {
 		log.Println(err)
 		return nil, err
 	}
@@ -469,16 +470,16 @@ func (service *htlcBackwardTxManager) SignHed1aAndUpdate_Step4(msgData string, u
 	payerData.ChannelId = channelId
 	payerData.PayerSignedHed1aHex = signedHed1aHex
 
-	payeeData := make(map[string]interface{})
-	payeeData["commitmentTxInfo"] = commitmentTxInfo
+	//payeeData := make(map[string]interface{})
+	//payeeData["commitmentTxInfo"] = commitmentTxInfo
 
 	responseData["payerData"] = payerData
-	responseData["payeeData"] = payeeData
+	responseData["payeeData"] = commitmentTxInfo
 	return responseData, nil
 }
 
 // -48 at Payer side
-func (service *htlcBackwardTxManager) CheckHed1aHex_Step5(msgData string, user bean.User) (responseData map[string]interface{}, err error) {
+func (service *htlcBackwardTxManager) CheckHed1aHex_Step5(msgData string, user bean.User) (responseData interface{}, err error) {
 	jsonObjFromPayee := &bean.HtlcRPayeeSignHed1aToPayer{}
 	_ = json.Unmarshal([]byte(msgData), jsonObjFromPayee)
 
@@ -516,9 +517,7 @@ func (service *htlcBackwardTxManager) CheckHed1aHex_Step5(msgData string, user b
 	}
 
 	_ = tx.Commit()
-	responseData = make(map[string]interface{})
-	responseData["commitmentTxInfo"] = commitmentTxInfo
-	return responseData, nil
+	return commitmentTxInfo, nil
 }
 
 //45 创建He1b
@@ -529,6 +528,9 @@ func createHe1bAtPayeeSide_at45(tx storm.Node, channelInfo dao.ChannelInfo, late
 		q.Eq("CommitmentTxId", latestCommitmentTxInfoId),
 		q.Eq("Owner", user.PeerId)).First(he1b)
 	if he1b.Id > 0 {
+		if he1b.RSMCTempAddressPubKey != reqData.CurrHtlcTempAddressForHE1bPubKey {
+			return nil, errors.New("curr_htlc_temp_address_for_he1b_pub_key is not the same one when create currTx ")
+		}
 		return he1b, nil
 	}
 
@@ -782,7 +784,7 @@ func checkSignedHerdHexAtPayeeSide_at47(tx storm.Node, signedHerd1bHex string, c
 	}
 
 	he1bOutputs, err := getInputsForNextTxByParseTxHashVout(he1b.RSMCTxHex, he1b.RSMCMultiAddress, he1b.RSMCMultiAddressScriptPubKey, he1b.RSMCRedeemScript)
-	if err != nil {
+	if err != nil || len(he1bOutputs) == 0 {
 		log.Println(err)
 		return err
 	}
@@ -835,7 +837,7 @@ func createAndSaveHed1a_at48(tx storm.Node, signedHed1aHex string, channelInfo d
 		return err
 	}
 
-	hed1a := dao.HTLCExecutionDeliveryOfR{}
+	hed1a := &dao.HTLCExecutionDeliveryOfR{}
 	_ = tx.Select(
 		q.Eq("ChannelId", channelInfo.ChannelId),
 		q.Eq("CommitmentTxId", commitmentTxInfo.Id),

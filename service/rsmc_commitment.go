@@ -109,6 +109,9 @@ func (this *commitmentTxManager) CommitmentTransactionCreated(msg bean.RequestMe
 		}
 
 	} else {
+		if reqData.CurrTempAddressPubKey != latestCommitmentTxInfo.RSMCTempAddressPubKey {
+			return nil, errors.New("curr_temp_address_pub_key is not the same when create currTx")
+		}
 		lastCommitmentTx := &dao.CommitmentTransaction{}
 		_ = tx.One("Id", latestCommitmentTxInfo.LastCommitmentTxId, lastCommitmentTx)
 		if _, err = tool.GetPubKeyFromWifAndCheck(reqData.LastTempAddressPrivateKey, lastCommitmentTx.RSMCTempAddressPubKey); err != nil {
@@ -314,6 +317,8 @@ func (this *commitmentTxManager) AfterBobSignCommitmentTrancationAtAliceSide(dat
 	}
 	//endregion
 
+	latestCommitmentTxInfo.RSMCTxHex = signedRsmcHex
+	latestCommitmentTxInfo.RSMCTxid = gjson.Parse(rsmcTxid).Array()[0].Get("txid").Str
 	// region 对自己的RD 二次签名
 	err = signRdTx(tx, channelInfo, signedRsmcHex, aliceRdHex, latestCommitmentTxInfo, myChannelAddress, user)
 	if err != nil {
@@ -322,13 +327,11 @@ func (this *commitmentTxManager) AfterBobSignCommitmentTrancationAtAliceSide(dat
 	// endregion
 
 	//更新alice的当前承诺交易
-
-	latestCommitmentTxInfo.SignAt = time.Now()
 	latestCommitmentTxInfo.CurrState = dao.TxInfoState_CreateAndSign
-	latestCommitmentTxInfo.RSMCTxHex = signedRsmcHex
-	latestCommitmentTxInfo.RSMCTxid = rsmcTxid
 	latestCommitmentTxInfo.ToCounterpartyTxHex = signedToOtherHex
-	latestCommitmentTxInfo.ToCounterpartyTxid = toCounterpartyTxid
+	latestCommitmentTxInfo.ToCounterpartyTxid = gjson.Parse(toCounterpartyTxid).Array()[0].Get("txid").Str
+	latestCommitmentTxInfo.SignAt = time.Now()
+
 	bytes, err := json.Marshal(latestCommitmentTxInfo)
 	msgHash := tool.SignMsgWithSha256(bytes)
 	latestCommitmentTxInfo.CurrHash = msgHash
@@ -498,6 +501,8 @@ func (this *commitmentTxSignedManager) BeforeBobSignCommitmentTranctionAtBobSide
 }
 
 func (this *commitmentTxSignedManager) RevokeAndAcknowledgeCommitmentTransaction(msg bean.RequestMessage, signer *bean.User) (retData *bean.PayeeSignCommitmentTxOfP2p, targetUser string, err error) {
+	var beginTime = time.Now()
+	log.Println("RevokeAndAcknowledgeCommitmentTransaction beginTime", beginTime.String())
 	if tool.CheckIsString(&msg.Data) == false {
 		err = errors.New("empty json reqData")
 		log.Println(err)
@@ -769,6 +774,11 @@ func (this *commitmentTxSignedManager) RevokeAndAcknowledgeCommitmentTransaction
 		//endregion
 
 	} else {
+
+		if reqData.CurrTempAddressPubKey != latestCommitmentTxInfo.RSMCTempAddressPubKey {
+			return nil, "", errors.New("curr_temp_address_pub_key is not the same when create currTx")
+		}
+
 		retData.RsmcHex = latestCommitmentTxInfo.RSMCTxHex
 		retData.ToCounterpartyTxHex = latestCommitmentTxInfo.ToCounterpartyTxHex
 		amountToOther = latestCommitmentTxInfo.AmountToCounterparty
@@ -805,10 +815,12 @@ func (this *commitmentTxSignedManager) RevokeAndAcknowledgeCommitmentTransaction
 		log.Println(err)
 		return nil, "", err
 	}
+
+	log.Println("RevokeAndAcknowledgeCommitmentTransaction endTime", time.Now().Sub(beginTime).String())
 	return retData, "", err
 }
 
-func (this *commitmentTxSignedManager) AfterAliceSignCommitmentTranctionAtBobSide(data string, user *bean.User) (retData map[string]interface{}, err error) {
+func (this *commitmentTxSignedManager) AfterAliceSignCommitmentTranctionAtBobSide(data string, user *bean.User) (retData interface{}, err error) {
 	jsonObj := gjson.Parse(data)
 
 	var channelId = jsonObj.Get("channelId").String()
@@ -846,16 +858,29 @@ func (this *commitmentTxSignedManager) AfterAliceSignCommitmentTranctionAtBobSid
 		myChannelAddress = channelInfo.AddressA
 	}
 
+	decodeRsmcHex, err := rpcClient.OmniDecodeTransaction(signedRsmcHex)
+	if err != nil {
+		return nil, err
+	}
+
+	decodeSignedToOtherHex, err := rpcClient.OmniDecodeTransaction(signedToOtherHex)
+	if err != nil {
+		return nil, err
+	}
+
+	latestCommitmentTxInfo.RSMCTxHex = signedRsmcHex
+	latestCommitmentTxInfo.RSMCTxid = gjson.Get(decodeRsmcHex, "txid").Str
 	err = signRdTx(tx, channelInfo, signedRsmcHex, rdHex, latestCommitmentTxInfo, myChannelAddress, user)
 	if err != nil {
 		return nil, err
 	}
 
 	//更新alice的当前承诺交易
-	latestCommitmentTxInfo.SignAt = time.Now()
 	latestCommitmentTxInfo.CurrState = dao.TxInfoState_CreateAndSign
-	latestCommitmentTxInfo.RSMCTxHex = signedRsmcHex
 	latestCommitmentTxInfo.ToCounterpartyTxHex = signedToOtherHex
+	latestCommitmentTxInfo.ToCounterpartyTxid = gjson.Get(decodeSignedToOtherHex, "txid").Str
+	latestCommitmentTxInfo.SignAt = time.Now()
+
 	bytes, err := json.Marshal(latestCommitmentTxInfo)
 	msgHash := tool.SignMsgWithSha256(bytes)
 	latestCommitmentTxInfo.CurrHash = msgHash
@@ -870,9 +895,9 @@ func (this *commitmentTxSignedManager) AfterAliceSignCommitmentTranctionAtBobSid
 
 	_ = tx.Commit()
 
-	retData = make(map[string]interface{})
-	retData["latest_commitment_tx_info"] = latestCommitmentTxInfo
-	return retData, nil
+	//retData = make(map[string]interface{})
+	//retData["latest_commitment_tx_info"] = latestCommitmentTxInfo
+	return latestCommitmentTxInfo, nil
 }
 
 //创建BR

@@ -59,8 +59,17 @@ func (client *Client) Read() {
 
 		var msg bean.RequestMessage
 		log.Println("request data: ", string(dataReq))
-		parse := gjson.Parse(string(dataReq))
 
+		temp := make(map[string]interface{})
+		err = json.Unmarshal(dataReq, &temp)
+		if err != nil {
+			log.Println(err)
+			client.sendToMyself(enum.MsgType_Error_0, false, "error json format")
+			continue
+		}
+		temp = nil
+
+		parse := gjson.Parse(string(dataReq))
 		if parse.Value() == nil || parse.Exists() == false || parse.IsObject() == false {
 			log.Println("wrong json input")
 			client.sendToMyself(enum.MsgType_Error_0, false, "wrong json input")
@@ -234,7 +243,7 @@ func (client *Client) Read() {
 						break
 					}
 
-					// -48 -49
+					// -49 -50
 					if msg.Type == enum.MsgType_HTLC_SendRequestCloseCurrTx_49 ||
 						msg.Type == enum.MsgType_HTLC_SendCloseSigned_50 {
 						sendType, dataOut, status = client.htlcCloseModule(msg)
@@ -294,9 +303,10 @@ func getReplyObj(data string, msgType enum.MsgType, status bool, fromClient, toC
 
 	parse := gjson.Parse(data)
 	result := parse.Value()
-	if result == nil || parse.Exists() == false {
+	if strings.HasPrefix(data, "{") == false && strings.HasPrefix(data, "[") == false {
 		result = data
 	}
+
 	jsonMessage, _ = json.Marshal(&bean.ReplyMessage{Type: msgType, Status: status, From: fromId, To: toClientId, Result: result})
 
 	return jsonMessage
@@ -306,9 +316,10 @@ func getP2PReplyObj(data string, msgType enum.MsgType, status bool, fromId, toCl
 
 	parse := gjson.Parse(data)
 	result := parse.Value()
-	if result == nil || parse.Exists() == false {
+	if strings.HasPrefix(data, "{") == false && strings.HasPrefix(data, "[") == false {
 		result = data
 	}
+
 	jsonMessage, _ := json.Marshal(&bean.ReplyMessage{Type: msgType, Status: status, From: fromId, To: toClientId, Result: result})
 	return jsonMessage
 }

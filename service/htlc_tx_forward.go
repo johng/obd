@@ -178,6 +178,7 @@ func (service *htlcForwardTxManager) PayerRequestFindPath(msgData string, user b
 
 	//tracker find path
 	pathRequest := trackerBean.HtlcPathRequest{}
+	pathRequest.H = htlcRequestInvoice.H
 	pathRequest.PropertyId = htlcRequestInvoice.PropertyId
 	pathRequest.Amount = htlcRequestInvoice.Amount
 	pathRequest.RealPayerPeerId = user.PeerId
@@ -193,8 +194,13 @@ func (service *htlcForwardTxManager) GetResponseFromTrackerOfPayerRequestFindPat
 		log.Println(err)
 		return nil, err
 	}
+	dataArr := strings.Split(channelPath, "_")
+	if len(dataArr) != 2 {
+		return nil, errors.New("no channel path")
+	}
 
-	splitArr := strings.Split(channelPath, ",")
+	h := dataArr[0]
+	splitArr := strings.Split(dataArr[1], ",")
 	currChannelInfo := dao.ChannelInfo{}
 	err = user.Db.Select(
 		q.Eq("ChannelId", splitArr[0]),
@@ -212,9 +218,10 @@ func (service *htlcForwardTxManager) GetResponseFromTrackerOfPayerRequestFindPat
 		nextNodePeerId = currChannelInfo.PeerIdA
 	}
 
-	arrLength := len(strings.Split(channelPath, ","))
+	arrLength := len(strings.Split(dataArr[1], ","))
 	retData := make(map[string]interface{})
-	retData["routing_packet"] = channelPath
+	retData["h"] = h
+	retData["routing_packet"] = dataArr[1]
 	retData["min_cltv_expiry"] = arrLength
 	retData["next_node_peerId"] = nextNodePeerId
 	return retData, nil
@@ -317,6 +324,14 @@ func (service *htlcForwardTxManager) UpdateAddHtlc_40(msg bean.RequestMessage, u
 		}
 		if latestCommitmentTx.CurrState == dao.TxInfoState_Create {
 			if latestCommitmentTx.LastCommitmentTxId > 0 {
+
+				if requestData.CurrRsmcTempAddressPubKey != latestCommitmentTx.RSMCTempAddressPubKey {
+					return nil, errors.New("curr_rsmc_temp_address_pub_key is not the same when create currTx")
+				}
+				if requestData.CurrHtlcTempAddressPubKey != latestCommitmentTx.HTLCTempAddressPubKey {
+					return nil, errors.New("curr_htlc_temp_address_pub_key is not the same when create currTx")
+				}
+
 				lastCommitmentTx := &dao.CommitmentTransaction{}
 				_ = tx.One("Id", latestCommitmentTx.LastCommitmentTxId, lastCommitmentTx)
 				_, err = tool.GetPubKeyFromWifAndCheck(requestData.LastTempAddressPrivateKey, lastCommitmentTx.RSMCTempAddressPubKey)
@@ -410,6 +425,10 @@ func (service *htlcForwardTxManager) UpdateAddHtlc_40(msg bean.RequestMessage, u
 		txStateRequest.DirectionFlag = trackerBean.HtlcTxState_PayMoney
 		txStateRequest.CurrChannelId = channelInfo.ChannelId
 		sendMsgToTracker(enum.MsgType_Tracker_UpdateHtlcTxState_352, txStateRequest)
+	} else {
+		if requestData.CurrHtlcTempAddressForHt1aPubKey != htlcRequestInfo.CurrHtlcTempAddressForHt1aPubKey {
+			return nil, errors.New("curr_htlc_temp_address_for_ht1a_pub_key is not the same when create currTx")
+		}
 	}
 	_ = tx.Commit()
 
@@ -488,13 +507,13 @@ func (service *htlcForwardTxManager) PayeeSignGetAddHtlc_41(jsonData string, use
 	}
 	defer tx.Rollback()
 
-	if tool.CheckIsString(&requestData.AliceCommitmentTxHash) == false {
-		return nil, errors.New("alice_commitment_tx_hash is empty")
+	if tool.CheckIsString(&requestData.PayerCommitmentTxHash) == false {
+		return nil, errors.New("payer_commitment_tx_hash is empty")
 	}
 
-	aliceMsg := service.addHtlcTempDataAt40P[requestData.AliceCommitmentTxHash]
+	aliceMsg := service.addHtlcTempDataAt40P[requestData.PayerCommitmentTxHash]
 	if tool.CheckIsString(&aliceMsg) == false {
-		return nil, errors.New("wrong alice_commitment_tx_hash")
+		return nil, errors.New("wrong payer_commitment_tx_hash")
 	}
 
 	payerRequestAddHtlc := &bean.AliceRequestAddHtlc{}
@@ -557,6 +576,14 @@ func (service *htlcForwardTxManager) PayeeSignGetAddHtlc_41(jsonData string, use
 		}
 		if latestCommitmentTxInfo.CurrState == dao.TxInfoState_Create {
 			if latestCommitmentTxInfo.LastCommitmentTxId > 0 {
+
+				if requestData.CurrRsmcTempAddressPubKey != latestCommitmentTxInfo.RSMCTempAddressPubKey {
+					return nil, errors.New("curr_rsmc_temp_address_pub_key is not the same when create currTx")
+				}
+				if requestData.CurrHtlcTempAddressPubKey != latestCommitmentTxInfo.HTLCTempAddressPubKey {
+					return nil, errors.New("curr_htlc_temp_address_pub_key is not the same when create currTx")
+				}
+
 				lastCommitmentTx := &dao.CommitmentTransaction{}
 				_ = tx.One("Id", latestCommitmentTxInfo.LastCommitmentTxId, lastCommitmentTx)
 				_, err = tool.GetPubKeyFromWifAndCheck(requestData.LastTempAddressPrivateKey, lastCommitmentTx.RSMCTempAddressPubKey)
@@ -629,6 +656,9 @@ func (service *htlcForwardTxManager) PayeeSignGetAddHtlc_41(jsonData string, use
 	if err != nil {
 		log.Println(err)
 		return nil, err
+	}
+	if len(aliceRsmcInputs) == 0 {
+		return nil, errors.New("wrong payer rsmc hex")
 	}
 	//endregion
 
@@ -864,7 +894,10 @@ func (service *htlcForwardTxManager) AfterBobSignAddHtlcAtAliceSide_42(msgData s
 	err = tx.Select(
 		q.Eq("ChannelId", channelId),
 		q.Eq("H", commitmentTransaction.HtlcH),
-		q.Eq("PropertyId", channelInfo.PropertyId)).First(htlcRequestInfo)
+		q.Eq("PropertyId", channelInfo.PropertyId)).
+		OrderBy("CreateAt").
+		Reverse().
+		First(htlcRequestInfo)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1119,7 +1152,7 @@ func (service *htlcForwardTxManager) AfterAliceSignAddHtlcAtBobSide_43(msgData s
 	aliceRetData := bean.PayeeCreateHt1aRDForPayer{}
 	aliceRetData.PayerCommitmentTxHash = jsonObj.PayerCommitmentTxHash
 
-	bobRetData := make(map[string]interface{})
+	//bobRetData := make(map[string]interface{})
 	bobCommitmentHash := jsonObj.PayeeCommitmentTxHash
 	latestCommitmentTx := &dao.CommitmentTransaction{}
 	err = tx.Select(q.Eq("CurrHash", bobCommitmentHash)).First(latestCommitmentTx)
@@ -1211,11 +1244,11 @@ func (service *htlcForwardTxManager) AfterAliceSignAddHtlcAtBobSide_43(msgData s
 	//同步通道信息到tracker
 	sendChannelStateToTracker(*channelInfo, *latestCommitmentTx)
 
-	bobRetData["commitmentTx"] = latestCommitmentTx
+	//bobRetData["commitmentTx"] = latestCommitmentTx
 
 	retData := make(map[string]interface{})
 	retData["aliceData"] = aliceRetData
-	retData["bobData"] = bobRetData
+	retData["bobData"] = latestCommitmentTx
 	return retData, true, nil
 }
 

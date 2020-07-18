@@ -103,6 +103,7 @@ func createHtlcRDTxObj(owner string, channelInfo *dao.ChannelInfo, htlcTimeoutTx
 	htrd.RDType = 1
 
 	//input
+	htrd.InputTxHex = htlcTimeoutTx.RSMCTxHex
 	htrd.InputTxid = htlcTimeoutTx.RSMCTxid
 	htrd.InputVout = 0
 	htrd.InputAmount = htlcTimeoutTx.RSMCOutAmount
@@ -135,7 +136,7 @@ func createHT1aForAlice(aliceDataJson bean.AliceRequestAddHtlc, signedHtlcHex st
 	aliceHtlcMultiAddressScriptPubKey := gjson.Get(tempJson, "scriptPubKey").String()
 
 	htlcInputs, err := getInputsForNextTxByParseTxHashVout(signedHtlcHex, aliceHtlcMultiAddress, aliceHtlcMultiAddressScriptPubKey, aliceHtlcRedeemScript)
-	if err != nil {
+	if err != nil || len(htlcInputs) == 0 {
 		log.Println(err)
 		return nil, err
 	}
@@ -285,7 +286,7 @@ func signHtlcLockByHTxAtPayerSide(tx storm.Node, channelInfo dao.ChannelInfo,
 		commitmentTransaction.HTLCMultiAddress,
 		commitmentTransaction.HTLCMultiAddressScriptPubKey,
 		commitmentTransaction.HTLCRedeemScript)
-	if err != nil {
+	if err != nil || len(htlcOutputs) == 0 {
 		log.Println(err)
 		return nil, err
 	}
