@@ -186,7 +186,10 @@ func addP2PChannel(stream network.Stream) *bufio.ReadWriter {
 		stream:  stream,
 		rw:      rw,
 	}
-	p2pChannelMap[stream.Conn().RemotePeer().Pretty()] = node
+
+	key := stream.Conn().RemotePeer().Pretty()
+
+	p2pChannelMap[key] = node
 	return rw
 }
 
