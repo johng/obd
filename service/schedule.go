@@ -169,6 +169,11 @@ func checkRsmcAndSendBR(db storm.Node) {
 
 func sendRdTx() {
 	var nodes []dao.RDTxWaitingSend
+
+	if db == nil {
+		return
+	}
+
 	err := db.Select(q.Eq("IsEnable", true)).Find(&nodes)
 	if err != nil {
 		return
