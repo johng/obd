@@ -15,44 +15,12 @@ func init() {
 func TestClient_GetMiningInfo(t *testing.T) {
 
 	client := NewClient()
-	hex := "0200000001b779abfe6fe2845be56442cf447f4d4589c55e48d048efae294115c479fa2b0000000000d9004730440220071a6d617e65999e085bd9354a185034473efca610f55354fb89949598ef6da70220279de54ef34d0308b01ab3062c6dd33a67d951515414faafc36e1a250a0efc9d01473044022047f6d2c98b41c1ce4f901407e75e88b010a5007652fb80df003f2691a8cc6fce02207a90f110cc592b52d677936e425c5b93bec62bcd8879b2b58529de6b5ae03ecb0147522102c57b02d24356e1d31d34d2e3a09f7d68a4bdec6c0556595bb6391ce5d6d4fc6621030138baf7b8df30e1aa40ee42f349e9b0d4c92abb0ee37b2c9d61bf0df58f408252aeffffffff03344700000000000017a914a65e628abb622b35118b5871b63b76006e7a5da8870000000000000000166a146f6d6e6900000000000000890000000017d784001c0200000000000017a914a65e628abb622b35118b5871b63b76006e7a5da88700000000"
-	result, err := client.DecodeRawTransaction(hex)
-	log.Println(err)
-	log.Println(result)
-	hex = "020000000173ecf2230c838c61d8fad3b446475bfe89fdccfa35e0121dd54fc6efb0f47f1d00000000d90047304402206a4c6607a9c454323f763052e065c7290559965612bed6e1d1e53256d72a38de02206e149f2ef912f9e41c0fa68abb25bc06bf9cf1b3549b73ed5bc945a8700107230147304402200b9c1e91881359d02c354cbab7d166e11ec9dc1397d4c624a743a946685e827802207c004e4bcad33843b90498855a307db574cc1c17199818a5b5f78845fa4feb430147522102c57b02d24356e1d31d34d2e3a09f7d68a4bdec6c0556595bb6391ce5d6d4fc6621030138baf7b8df30e1aa40ee42f349e9b0d4c92abb0ee37b2c9d61bf0df58f408252aeffffffff03344700000000000017a914bc86aa4fe56c2efda016bb1b0fa928372b8c51ab870000000000000000166a146f6d6e6900000000000000890000000017d784001c0200000000000017a914bc86aa4fe56c2efda016bb1b0fa928372b8c51ab8700000000"
-	result, err = client.DecodeRawTransaction(hex)
-	log.Println(err)
-	log.Println(result)
-	//result, err := client.GetMiningInfo()
-	//log.Println(err)
-	//log.Println(result)
-	//
-	//result, err = client.ListUnspent("12A7mKppn4XsYBzPDGg8HY1L2zRS1uFeWS")
-	//log.Println(err)
-	//log.Println(result)
-	//
-	//result, err = client.ListUnspent("1FuiQiycRNxfWy5twwEbQbQkWyFUntgbCG")
-	//log.Println(err)
-	//log.Println(result)
+	result, _ := client.ListReceivedByAddress("2N3GWPBvcyjXoXaXjWetKTzUXndGQCkgMna")
+	//balance, err := client.OmniGetbalance("n4ExCKJY11hCu3xKkjDFLE1ZG4awjYsk3E", 137)
+	//log.Println(balance)
 
-	//client.send("importaddress", []interface{}{"12A7mKppn4XsYBzPDGg8HY1L2zRS1uFeWS", "", true})
-	//log.Println(1)
-	//client.send("importaddress", []interface{}{"1KoMjWRTRRZogAEZKYAhNKgtejzb4wGPPW", "", true})
-	//log.Println(2)
-	//client.send("importaddress", []interface{}{"mqnj5uu2jRwY5pe3Y8YyQqpJ6UKgEyqKuY", "", true})
-	//log.Println(3)
-	return
-
-	//result, err = client.send("importaddress", []interface{}{"mre4gBmjKiBm8gwZmpCNcnnHiDY7TXr2wD", "", false})
-	//log.Println(err)
-	//log.Println(result)
-
-	isValid, err := client.ValidateAddress("mfteg3UFwYQVRtYV6NXPaKyLCcmBwGuAXu")
-	log.Println(isValid)
-	log.Println(err)
-
-	result, err = client.ListUnspent("mfteg3UFwYQVRtYV6NXPaKyLCcmBwGuAXu")
-	log.Println(err)
+	//result := client.EstimateSmartFee()
+	//result, err := client.DecodeRawTransaction("02000000018451f5b707c6f1a1eb0b3f3e9eb6d736b3a8e15c70d01e3cc136783449d13174000000006a473044022079bcf8b5a3daf409990ce5fb89b3b734f421b90b24f8262d4920f5c92630d92b02200200dbdd98029dff9bb02cbff638a446b4b5b7597a55a9b03f4e62756b1566370121022496530640e1c4c7a2a9a5878439b19eebb2fbce2fabf7a9d847402860d10813ffffffff02c43500000000000017a914129965444fa07857158de1178ace3aa3afc82efd87b00a0a00000000001976a91428272468efa366443623045f833f53e7d63aa4d388ac00000000")
 	log.Println(result)
 
 }

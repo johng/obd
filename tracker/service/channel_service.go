@@ -61,7 +61,9 @@ func (manager *channelManager) updateChannelInfo(obdClient *ObdNode, msgData str
 			_ = db.Save(channelInfo)
 		} else {
 			channelInfo.PropertyId = item.PropertyId
-			channelInfo.CurrState = item.CurrState
+			if channelInfo.CurrState != 21 {
+				channelInfo.CurrState = item.CurrState
+			}
 			channelInfo.PeerIdA = item.PeerIdA
 			channelInfo.PeerIdB = item.PeerIdB
 			channelInfo.AmountA = item.AmountA
@@ -104,6 +106,7 @@ func (manager *channelManager) GetChannelState(context *gin.Context) {
 }
 
 func (manager *channelManager) GetChannels(context *gin.Context) {
+	userId := context.Query("userId")
 	pageNumStr := context.Query("pageNum")
 	pageNum, _ := strconv.Atoi(pageNumStr)
 	if pageNum <= 0 {
@@ -127,7 +130,11 @@ func (manager *channelManager) GetChannels(context *gin.Context) {
 
 	pageNum -= 1
 	var infos []dao.ChannelInfo
-	_ = db.Select(q.True()).OrderBy("Id").Reverse().Skip(pageNum * pageSize).Limit(pageSize).Find(&infos)
+	if len(userId) > 0 {
+		_ = db.Select(q.Or(q.Eq("PeerIdA", userId), q.Eq("PeerIdB", userId))).OrderBy("Id").Reverse().Skip(pageNum * pageSize).Limit(pageSize).Find(&infos)
+	} else {
+		_ = db.Select(q.True()).OrderBy("Id").Reverse().Skip(pageNum * pageSize).Limit(pageSize).Find(&infos)
+	}
 	context.JSON(http.StatusOK, gin.H{
 		"data":       infos,
 		"totalCount": totalCount,

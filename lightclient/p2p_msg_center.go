@@ -28,7 +28,7 @@ func routerOfP2PNode(msgType enum.MsgType, data string, client *Client) (retData
 			defaultErr = err
 		}
 	case enum.MsgType_FundingCreate_BtcFundingCreated_340:
-		_, err := service.FundingTransactionService.BeforeBobSignBtcFundingAtBobSide(data, client.User)
+		_, err := service.FundingTransactionService.BeforeSignBtcFundingCreatedAtBobSide(data, client.User)
 		if err == nil {
 			status = true
 		} else {
@@ -42,14 +42,14 @@ func routerOfP2PNode(msgType enum.MsgType, data string, client *Client) (retData
 			defaultErr = err
 		}
 	case enum.MsgType_FundingCreate_AssetFundingCreated_34:
-		_, err := service.FundingTransactionService.BeforeBobSignOmniFundingAtBobSide(data, client.User)
+		_, err := service.FundingTransactionService.BeforeSignAssetFundingCreateAtBobSide(data, client.User)
 		if err == nil {
 			status = true
 		} else {
 			defaultErr = err
 		}
 	case enum.MsgType_FundingSign_AssetFundingSigned_35:
-		node, err := service.FundingTransactionService.AfterBobSignOmniFundingAtAilceSide(data, client.User)
+		node, err := service.FundingTransactionService.AfterBobSignAssetFundingAtAliceSide(data, client.User)
 		if err == nil {
 			status = true
 			retData, _ := json.Marshal(node)
@@ -58,7 +58,7 @@ func routerOfP2PNode(msgType enum.MsgType, data string, client *Client) (retData
 			defaultErr = err
 		}
 	case enum.MsgType_CommitmentTx_CommitmentTransactionCreated_351:
-		node, err := service.CommitmentTxSignedService.BeforeBobSignCommitmentTranctionAtBobSide(data, client.User)
+		node, err := service.CommitmentTxSignedService.BeforeBobSignCommitmentTransactionAtBobSide(data, client.User)
 		if err == nil {
 			status = true
 			retData, _ := json.Marshal(node)
@@ -66,15 +66,19 @@ func routerOfP2PNode(msgType enum.MsgType, data string, client *Client) (retData
 		}
 		defaultErr = err
 	case enum.MsgType_CommitmentTxSigned_ToAliceSign_353:
-		node, _, err := service.CommitmentTxService.AfterBobSignCommitmentTrancationAtAliceSide(data, client.User)
+		node, needNoticeAlice, err := service.CommitmentTxService.AfterBobSignCommitmentTransactionAtAliceSide(data, client.User)
 		if err == nil {
 			status = true
 			retData, _ := json.Marshal(node)
 			return string(retData), nil
+		} else {
+			if needNoticeAlice {
+				client.sendToMyself(enum.MsgType_CommitmentTxSigned_RecvRevokeAndAcknowledgeCommitmentTransaction_352, true, string(err.Error()))
+			}
 		}
 		defaultErr = err
 	case enum.MsgType_CommitmentTxSigned_SecondToBobSign_354:
-		node, err := service.CommitmentTxSignedService.AfterAliceSignCommitmentTranctionAtBobSide(data, client.User)
+		node, err := service.CommitmentTxSignedService.AfterAliceSignCommitmentTransactionAtBobSide(data, client.User)
 		if err == nil {
 			status = true
 			retData, _ := json.Marshal(node)

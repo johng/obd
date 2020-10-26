@@ -7,6 +7,7 @@ import (
 	"github.com/omnilaboratory/obd/config"
 	"github.com/satori/go.uuid"
 	"google.golang.org/grpc"
+	"log"
 	"net/http"
 	"strconv"
 )
@@ -18,7 +19,7 @@ func InitRouter(conn *grpc.ClientConn) *gin.Engine {
 	router.Use(gin.Recovery())
 
 	go globalWsClientManager.Start()
-	bean.MyObdNodeInfo.WebsocketLink = "ws://" + config.P2P_hostIp + ":" + strconv.Itoa(config.ServerPort) + "/ws" + config.ChainNode_Type
+	bean.CurrObdNodeInfo.WebsocketLink = "ws://" + config.P2P_hostIp + ":" + strconv.Itoa(config.ServerPort) + "/ws" + config.ChainNode_Type
 	router.GET("/ws"+config.ChainNode_Type, wsClientConnect)
 
 	return router
@@ -26,19 +27,19 @@ func InitRouter(conn *grpc.ClientConn) *gin.Engine {
 }
 
 func wsClientConnect(c *gin.Context) {
-	conn, error := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}).Upgrade(c.Writer, c.Request, nil)
-	if error != nil {
+	wsConn, err := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}).Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Println(err)
 		http.NotFound(c.Writer, c.Request)
 		return
 	}
 
-	uuidStr := uuid.NewV4()
 	client := &Client{
-		Id:          uuidStr.String(),
-		Socket:      conn,
+		Id:          uuid.NewV4().String(),
+		Socket:      wsConn,
 		SendChannel: make(chan []byte)}
 
-	globalWsClientManager.Connected <- client
 	go client.Write()
+	globalWsClientManager.Connected <- client
 	client.Read()
 }

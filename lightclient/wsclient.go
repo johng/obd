@@ -3,6 +3,7 @@ package lightclient
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/service"
@@ -14,14 +15,16 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type Client struct {
+	Id          string
+	User        *bean.User
+	Socket      *websocket.Conn
+	SendChannel chan []byte
+}
+
 func (client *Client) Write() {
 	defer func() {
-		e := client.Socket.Close()
-		if e != nil {
-			log.Println(e)
-		} else {
-			log.Println("socket closed after writing...")
-		}
+		_ = client.Socket.Close()
 	}()
 
 	for {
@@ -31,7 +34,7 @@ func (client *Client) Write() {
 				_ = client.Socket.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			log.Println("send data", string(data))
+			log.Println("send data to client ", string(data))
 			_ = client.Socket.WriteMessage(websocket.TextMessage, data)
 		}
 	}
@@ -40,14 +43,7 @@ func (client *Client) Write() {
 func (client *Client) Read() {
 	defer func() {
 		_ = service.UserService.UserLogout(client.User)
-		if client.User != nil {
-			delete(globalWsClientManager.OnlineUserMap, client.User.PeerId)
-			delete(service.OnlineUserMap, client.User.PeerId)
-			client.User = nil
-		}
 		globalWsClientManager.Disconnected <- client
-		_ = client.Socket.Close()
-		log.Println("socket closed after reading...")
 	}()
 
 	for {
@@ -58,7 +54,7 @@ func (client *Client) Read() {
 		}
 
 		var msg bean.RequestMessage
-		log.Println("request data: ", string(dataReq))
+		log.Println("input data: ", string(dataReq))
 
 		temp := make(map[string]interface{})
 		err = json.Unmarshal(dataReq, &temp)
@@ -69,14 +65,14 @@ func (client *Client) Read() {
 		}
 		temp = nil
 
-		parse := gjson.Parse(string(dataReq))
-		if parse.Value() == nil || parse.Exists() == false || parse.IsObject() == false {
+		jsonParse := gjson.Parse(string(dataReq))
+		if jsonParse.Value() == nil || jsonParse.Exists() == false || jsonParse.IsObject() == false {
 			log.Println("wrong json input")
 			client.sendToMyself(enum.MsgType_Error_0, false, "wrong json input")
 			continue
 		}
 
-		msg.Type = enum.MsgType(parse.Get("type").Int())
+		msg.Type = enum.MsgType(jsonParse.Get("type").Int())
 		if enum.CheckExist(msg.Type) == false {
 			data := "not exist the msg type"
 			log.Println(data)
@@ -84,28 +80,26 @@ func (client *Client) Read() {
 			continue
 		}
 
-		msg.Data = parse.Get("data").String()
-		msg.SenderUserPeerId = parse.Get("sender_user_peer_id").String()
-		if len(msg.SenderUserPeerId) == 0 && client.User != nil {
+		msg.SenderNodePeerId = p2PLocalPeerId
+		msg.SenderUserPeerId = client.Id
+		if client.User != nil {
 			msg.SenderUserPeerId = client.User.PeerId
 		}
-		if len(msg.SenderNodePeerId) == 0 {
-			msg.SenderNodePeerId = P2PLocalPeerId
-		}
 
-		msg.RecipientUserPeerId = parse.Get("recipient_user_peer_id").String()
-		msg.RecipientNodePeerId = parse.Get("recipient_node_peer_id").String()
+		msg.RecipientNodePeerId = jsonParse.Get("recipient_node_peer_id").String()
+		msg.RecipientUserPeerId = jsonParse.Get("recipient_user_peer_id").String()
 
 		// check the Recipient is online
 		if tool.CheckIsString(&msg.RecipientUserPeerId) {
-			_, err := client.FindUser(&msg.RecipientUserPeerId)
+			_, err = findUserOnLine(msg)
 			if err != nil {
 				if tool.CheckIsString(&msg.RecipientNodePeerId) == false {
-					client.sendToMyself(msg.Type, false, "can not find target user")
+					client.sendToMyself(msg.Type, false, fmt.Sprintf(enum.Tips_user_notExistOrOnline, msg.RecipientUserPeerId))
 					continue
 				}
 			}
 		}
+		msg.Data = jsonParse.Get("data").String()
 
 		var sendType = enum.SendTargetType_SendToNone
 		status := false
@@ -145,34 +139,26 @@ func (client *Client) Read() {
 					msg.Type == enum.MsgType_HTLC_SendAddHTLC_40 || msg.Type == enum.MsgType_HTLC_SendAddHTLCSigned_41 ||
 					msg.Type == enum.MsgType_HTLC_SendVerifyR_45 || msg.Type == enum.MsgType_HTLC_SendSignVerifyR_46 ||
 					msg.Type == enum.MsgType_HTLC_SendRequestCloseCurrTx_49 || msg.Type == enum.MsgType_HTLC_SendCloseSigned_50 ||
-					msg.Type == enum.MsgType_Atomic_SendSwap_80 || msg.Type == enum.MsgType_Atomic_SendSwapAccept_81 ||
-					msg.Type == enum.MsgType_SendCloseChannelRequest_38 || msg.Type == enum.MsgType_SendCloseChannelSign_39 {
+					msg.Type == enum.MsgType_Atomic_SendSwap_80 || msg.Type == enum.MsgType_Atomic_SendSwapAccept_81 {
 					if tool.CheckIsString(&msg.RecipientUserPeerId) == false {
-						client.sendToMyself(msg.Type, false, "error recipient_user_peer_id")
+						client.sendToMyself(msg.Type, false, enum.Tips_common_empty+" recipient_user_peer_id")
 						continue
 					}
 					if tool.CheckIsString(&msg.RecipientNodePeerId) == false {
-						client.sendToMyself(msg.Type, false, "error recipient_node_peer_id")
+						client.sendToMyself(msg.Type, false, enum.Tips_common_empty+"error recipient_node_peer_id")
 						continue
 					}
 					if p2pChannelMap[msg.RecipientNodePeerId] == nil {
-						client.sendToMyself(msg.Type, false, "not connect recipient_node_peer_id")
+						client.sendToMyself(msg.Type, false, fmt.Sprintf(enum.Tips_common_errorObdPeerId, msg.RecipientNodePeerId))
 						continue
 					}
-					if msg.RecipientNodePeerId == P2PLocalPeerId {
-						if _, err = FindUserOnLine(&msg.RecipientUserPeerId); err != nil {
-							client.sendToMyself(msg.Type, false, err.Error())
-							continue
-						}
-					} else {
-						if flag := service.HttpGetUserStateFromTracker(msg.RecipientUserPeerId); flag == 0 {
-							client.sendToMyself(msg.Type, false, errors.New("recipient_user_peer_id not online").Error())
-							continue
-						}
+
+					if _, err = findUserOnLine(msg); err != nil {
+						client.sendToMyself(msg.Type, false, err.Error())
+						continue
 					}
 				}
 
-				msg.SenderUserPeerId = client.User.PeerId
 				for {
 					//-3000 -3001
 					if msg.Type <= enum.MsgType_Mnemonic_CreateAddress_3000 &&
@@ -181,20 +167,21 @@ func (client *Client) Read() {
 						break
 					}
 
-					//-32 -33  及查询
+					//-32 -33  -38 and query for channel
 					if msg.Type == enum.MsgType_SendChannelOpen_32 ||
 						msg.Type == enum.MsgType_SendChannelAccept_33 ||
+						msg.Type == enum.MsgType_SendCloseChannelRequest_38 ||
 						(msg.Type <= enum.MsgType_ChannelOpen_AllItem_3150 &&
-							msg.Type >= enum.MsgType_GetChannelInfoByDbId_3155) {
+							msg.Type >= enum.MsgType_CheckChannelAddessExist_3156) {
 						sendType, dataOut, status = client.channelModule(msg)
 						break
 					}
 
-					//-34 -340 及查询
+					//-34 -340 and query
 					if msg.Type == enum.MsgType_FundingCreate_SendAssetFundingCreated_34 ||
 						msg.Type == enum.MsgType_FundingCreate_SendBtcFundingCreated_340 ||
 						(msg.Type <= enum.MsgType_FundingCreate_Asset_AllItem_3100 &&
-							msg.Type >= enum.MsgType_FundingCreate_Btc_ItemRDByTempChannelIdAndTxId_3110) {
+							msg.Type >= enum.MsgType_FundingCreate_Btc_ItemByChannelId_3111) {
 						sendType, dataOut, status = client.fundingTransactionModule(msg)
 						break
 					}
@@ -214,16 +201,16 @@ func (client *Client) Read() {
 						break
 					}
 
-					//-352
-					if msg.Type == enum.MsgType_CommitmentTxSigned_SendRevokeAndAcknowledgeCommitmentTransaction_352 {
-						sendType, dataOut, status = client.commitmentTxSignModule(msg)
+					//-htlc query
+					if msg.Type <= enum.MsgType_Htlc_GetLatestHT1aOrHE1b_3250 &&
+						msg.Type >= enum.MsgType_Htlc_GetHT1aOrHE1bBySomeCommitmentId_3251 {
+						sendType, dataOut, status = client.htlcQueryModule(msg)
 						break
 					}
 
-					//-38 -39
-					if msg.Type == enum.MsgType_SendCloseChannelRequest_38 ||
-						msg.Type == enum.MsgType_SendCloseChannelSign_39 {
-						sendType, dataOut, status = client.channelModule(msg)
+					//-352
+					if msg.Type == enum.MsgType_CommitmentTxSigned_SendRevokeAndAcknowledgeCommitmentTransaction_352 {
+						sendType, dataOut, status = client.commitmentTxSignModule(msg)
 						break
 					}
 
@@ -258,6 +245,13 @@ func (client *Client) Read() {
 					break
 				}
 			}
+		}
+
+		if status == false && len(dataOut) == 0 && sendType == enum.SendTargetType_SendToNone {
+			data := "the msg type has no module"
+			log.Println(data)
+			client.sendToMyself(msg.Type, false, data)
+			continue
 		}
 
 		if len(dataOut) == 0 {
@@ -329,33 +323,17 @@ func (client *Client) sendToMyself(msgType enum.MsgType, status bool, data strin
 	client.SendChannel <- jsonMessage
 }
 
-func (client *Client) sendToSomeone(msgType enum.MsgType, status bool, recipientPeerId string, data string) error {
-	if tool.CheckIsString(&recipientPeerId) {
-		if _, err := client.FindUser(&recipientPeerId); err == nil {
-			itemClient := globalWsClientManager.OnlineUserMap[recipientPeerId]
-			if itemClient != nil && itemClient.User != nil {
-				jsonMessage := getReplyObj(data, msgType, status, client, itemClient)
-				itemClient.SendChannel <- jsonMessage
-				return nil
-			}
-		}
-	}
-	return errors.New("recipient not exist or online")
-}
-
-//发送消息给对方，分为同节点和不同节点的两种情况
+// send p2p msg, check whether they are at the same obd node
 func (client *Client) sendDataToP2PUser(msg bean.RequestMessage, status bool, data string) error {
 	msg.SenderUserPeerId = client.User.PeerId
 	msg.SenderNodePeerId = client.User.P2PLocalPeerId
 	if tool.CheckIsString(&msg.RecipientUserPeerId) && tool.CheckIsString(&msg.RecipientNodePeerId) {
-		//如果是同一个obd节点
-		if msg.RecipientNodePeerId == P2PLocalPeerId {
-			if _, err := FindUserOnLine(&msg.RecipientUserPeerId); err == nil {
-				itemClient := globalWsClientManager.OnlineUserMap[msg.RecipientUserPeerId]
+		//if they at the same obd node
+		if msg.RecipientNodePeerId == p2PLocalPeerId {
+			if _, err := findUserOnLine(msg); err == nil {
+				itemClient := globalWsClientManager.OnlineClientMap[msg.RecipientUserPeerId]
 				if itemClient != nil && itemClient.User != nil {
-					//因为数据库，分库，需要对特定的消息进行处理
 					if status {
-						//收到请求后，首先对消息进行处理
 						retData, err := routerOfP2PNode(msg.Type, data, itemClient)
 						if err != nil {
 							return err
@@ -376,29 +354,29 @@ func (client *Client) sendDataToP2PUser(msg bean.RequestMessage, status bool, da
 					return nil
 				}
 			}
-		} else { //不通的p2p的节点 需要转发到对方的节点
+		} else { //at the different obd node,p2p transfer msg to other node
 			msgToOther := bean.RequestMessage{}
 			msgToOther.Type = msg.Type
-			msgToOther.SenderNodePeerId = P2PLocalPeerId
+			msgToOther.SenderNodePeerId = p2PLocalPeerId
 			msgToOther.SenderUserPeerId = msg.SenderUserPeerId
 			msgToOther.RecipientUserPeerId = msg.RecipientUserPeerId
 			msgToOther.RecipientNodePeerId = msg.RecipientNodePeerId
 			msgToOther.Data = data
 			bytes, err := json.Marshal(msgToOther)
 			if err == nil {
-				return SendP2PMsg(msg.RecipientNodePeerId, string(bytes))
+				return sendP2PMsg(msg.RecipientNodePeerId, string(bytes))
 			}
 		}
 	}
-	return errors.New("recipient not exist or online")
+	return errors.New(fmt.Sprintf(enum.Tips_user_notExistOrOnline, msg.RecipientUserPeerId))
 }
 
 //当p2p收到消息后
 func getDataFromP2PSomeone(msg bean.RequestMessage) error {
 	if tool.CheckIsString(&msg.RecipientUserPeerId) && tool.CheckIsString(&msg.RecipientNodePeerId) {
-		if msg.RecipientNodePeerId == P2PLocalPeerId {
-			if _, err := FindUserOnLine(&msg.RecipientUserPeerId); err == nil {
-				itemClient := globalWsClientManager.OnlineUserMap[msg.RecipientUserPeerId]
+		if msg.RecipientNodePeerId == p2PLocalPeerId {
+			if _, err := findUserOnLine(msg); err == nil {
+				itemClient := globalWsClientManager.OnlineClientMap[msg.RecipientUserPeerId]
 				if itemClient != nil && itemClient.User != nil {
 					//收到数据后，需要对其进行加工
 					retData, err := routerOfP2PNode(msg.Type, msg.Data, itemClient)
@@ -424,7 +402,7 @@ func getDataFromP2PSomeone(msg bean.RequestMessage) error {
 			}
 		}
 	}
-	return errors.New("recipient not exist or online")
+	return errors.New(fmt.Sprintf(enum.Tips_user_notExistOrOnline, msg.RecipientUserPeerId))
 }
 
 func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data string, retData string) string {
@@ -477,7 +455,7 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 			newMsg := bean.RequestMessage{}
 			newMsg.Type = enum.MsgType_CommitmentTxSigned_SecondToBobSign_354
 			newMsg.SenderUserPeerId = itemClient.User.PeerId
-			newMsg.SenderNodePeerId = P2PLocalPeerId
+			newMsg.SenderNodePeerId = p2PLocalPeerId
 			newMsg.RecipientUserPeerId = msg.SenderUserPeerId
 			newMsg.RecipientNodePeerId = msg.SenderNodePeerId
 			payeeData := gjson.Parse(retData).Get("bobData").String()
@@ -502,7 +480,7 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 		newMsg := bean.RequestMessage{}
 		newMsg.Type = enum.MsgType_HTLC_PayeeCreateHTRD1a_43
 		newMsg.SenderUserPeerId = itemClient.User.PeerId
-		newMsg.SenderNodePeerId = P2PLocalPeerId
+		newMsg.SenderNodePeerId = p2PLocalPeerId
 		newMsg.RecipientUserPeerId = msg.SenderUserPeerId
 		newMsg.RecipientNodePeerId = msg.SenderNodePeerId
 		newMsg.Data = data
@@ -516,7 +494,7 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 		newMsg := bean.RequestMessage{}
 		newMsg.Type = enum.MsgType_HTLC_PayerSignHTRD1a_44
 		newMsg.SenderUserPeerId = itemClient.User.PeerId
-		newMsg.SenderNodePeerId = P2PLocalPeerId
+		newMsg.SenderNodePeerId = p2PLocalPeerId
 		newMsg.RecipientUserPeerId = msg.SenderUserPeerId
 		newMsg.RecipientNodePeerId = msg.SenderNodePeerId
 		newMsg.Data = data
@@ -540,7 +518,7 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 		newMsg := bean.RequestMessage{}
 		newMsg.Type = enum.MsgType_HTLC_SignHedHex_48
 		newMsg.SenderUserPeerId = itemClient.User.PeerId
-		newMsg.SenderNodePeerId = P2PLocalPeerId
+		newMsg.SenderNodePeerId = p2PLocalPeerId
 		newMsg.RecipientUserPeerId = msg.SenderUserPeerId
 		newMsg.RecipientNodePeerId = msg.SenderNodePeerId
 		payerData := gjson.Parse(retData).Get("payerData").String()
@@ -569,7 +547,7 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 		newMsg := bean.RequestMessage{}
 		newMsg.Type = enum.MsgType_HTLC_CloseHtlcUpdateCnb_52
 		newMsg.SenderUserPeerId = itemClient.User.PeerId
-		newMsg.SenderNodePeerId = P2PLocalPeerId
+		newMsg.SenderNodePeerId = p2PLocalPeerId
 		newMsg.RecipientUserPeerId = msg.SenderUserPeerId
 		newMsg.RecipientNodePeerId = msg.SenderNodePeerId
 		payeeData := gjson.Parse(retData).Get("bobData").String()
@@ -596,23 +574,4 @@ func p2pMiddleNodeTransferData(msg *bean.RequestMessage, itemClient Client, data
 	}
 
 	return data
-}
-
-func (client *Client) FindUser(peerId *string) (*Client, error) {
-	if tool.CheckIsString(peerId) {
-		itemClient := globalWsClientManager.OnlineUserMap[*peerId]
-		if itemClient != nil && itemClient.User != nil {
-			return itemClient, nil
-		}
-	}
-	return nil, errors.New("user not exist or online")
-}
-func FindUserOnLine(peerId *string) (*Client, error) {
-	if tool.CheckIsString(peerId) {
-		itemClient := globalWsClientManager.OnlineUserMap[*peerId]
-		if itemClient != nil && itemClient.User != nil {
-			return itemClient, nil
-		}
-	}
-	return nil, errors.New(*peerId + " not exist or online")
 }

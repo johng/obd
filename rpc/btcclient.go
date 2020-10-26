@@ -16,6 +16,15 @@ import (
 func (client *Client) GetBlockChainInfo() (result string, err error) {
 	return client.send("getblockchaininfo", nil)
 }
+
+//https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
+func (client *Client) EstimateSmartFee() (feeRate float64) {
+	result, err := client.send("estimatesmartfee", []interface{}{10})
+	if err == nil {
+		return gjson.Get(result, "feerate").Float() * 100000
+	}
+	return 2
+}
 func (client *Client) CreateMultiSig(minSignNum int, keys []string) (result string, err error) {
 	return client.send("createmultisig", []interface{}{minSignNum, keys})
 }
@@ -141,6 +150,11 @@ func (client *Client) ValidateAddress(address string) (isValid bool, err error) 
 	if tool.CheckIsString(&address) == false {
 		return false, errors.New("address not exist")
 	}
+
+	if validatedAddress[address] {
+		return true, nil
+	}
+
 	result, err := client.GetAddressInfo(address)
 	if err != nil {
 		return false, err
@@ -149,6 +163,7 @@ func (client *Client) ValidateAddress(address string) (isValid bool, err error) 
 		_, _ = client.send("importaddress", []interface{}{address, "", false})
 	}
 	//log.Println(result)
+	validatedAddress[address] = true
 
 	return gjson.Get(result, "iswatchonly").Bool(), nil
 }
@@ -191,7 +206,7 @@ func (client *Client) BtcCreateAndSignRawTransaction(fromBitCoinAddress string, 
 	}
 
 	if minerFee <= 0 {
-		minerFee = config.GetMinerFee()
+		minerFee = client.GetMinerFee()
 	}
 
 	outTotalAmount := decimal.NewFromFloat(0)
@@ -322,7 +337,7 @@ func (client *Client) BtcCreateAndSignRawTransactionForUnsendInputTx(fromBitCoin
 	}
 
 	if minerFee <= config.GetOmniDustBtc() {
-		minerFee = config.GetMinerFee()
+		minerFee = client.GetMinerFee()
 	}
 
 	outAmount := decimal.NewFromFloat(0)
@@ -458,20 +473,20 @@ func (client *Client) BtcSignRawTransaction(hex string, privKey string) (string,
 	}
 	hex = gjson.Get(signHex, "hex").String()
 	decodeHex, err := client.DecodeRawTransaction(hex)
-	if err == nil {
-		log.Println(decodeHex)
+	if err != nil {
+		log.Println(err)
 	}
 	txId := gjson.Get(decodeHex, "txid").String()
 	if err != nil {
 		return "", hex, err
 	}
 
-	result, err := client.OmniDecodeTransaction(hex)
-	if err == nil {
-		log.Println(result)
-	} else {
-		log.Println(err)
-	}
+	//result, err := client.OmniDecodeTransaction(hex)
+	//if err == nil {
+	//	log.Println(result)
+	//} else {
+	//	log.Println(err)
+	//}
 
 	return txId, hex, nil
 }

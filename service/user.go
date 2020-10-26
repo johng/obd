@@ -7,7 +7,6 @@ import (
 	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/dao"
 	"github.com/omnilaboratory/obd/tool"
-	trackerBean "github.com/omnilaboratory/obd/tracker/bean"
 	"github.com/tyler-smith/go-bip39"
 	"log"
 	"time"
@@ -18,42 +17,12 @@ type UserManager struct {
 
 var UserService = UserManager{}
 
-// UserSignUp
-func (service *UserManager) UserSignUp(user *bean.User) error {
-	// Check data if correct.
-	if user == nil {
-		return errors.New("user is nil")
-	}
-
-	if tool.CheckIsString(&user.PeerId) == false {
-		return errors.New("Peer ID  is not correct.")
-	}
-
-	// Check out if the user already exists.
-	var node dao.User
-	err := db.Select(q.Eq("PeerId", user.PeerId)).First(&node)
-	if err == nil {
-		return errors.New("The user already exists.")
-	}
-
-	// A new user, sign up.
-	node.PeerId = user.PeerId
-	node.CreateAt = time.Now()
-
-	err = db.Save(&node)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (service *UserManager) UserLogin(user *bean.User) error {
 	if user == nil {
-		return errors.New("user is nil")
+		return errors.New(enum.Tips_user_nilUser)
 	}
 	if tool.CheckIsString(&user.Mnemonic) == false || bip39.IsMnemonicValid(user.Mnemonic) == false {
-		return errors.New("err Mnemonic")
+		return errors.New(enum.Tips_common_wrong + "mnemonic")
 	}
 
 	changeExtKey, err := HDWalletService.CreateChangeExtKey(user.Mnemonic)
@@ -61,7 +30,7 @@ func (service *UserManager) UserLogin(user *bean.User) error {
 		return err
 	}
 	var node dao.User
-	user.PeerId = tool.SignMsgWithSha256([]byte(user.Mnemonic))
+	user.PeerId = tool.GetUserPeerId(user.Mnemonic)
 	userDB, err := dao.DBService.GetUserDB(user.PeerId)
 	if err != nil {
 		return err
@@ -105,7 +74,7 @@ func (service *UserManager) UserLogin(user *bean.User) error {
 
 func (service *UserManager) UserLogout(user *bean.User) error {
 	if user == nil {
-		return errors.New("user is nil")
+		return errors.New(enum.Tips_user_nilUser)
 	}
 	var node dao.User
 	err := user.Db.Select(q.Eq("PeerId", user.PeerId)).First(&node)
@@ -127,16 +96,4 @@ func (service *UserManager) UserLogout(user *bean.User) error {
 	}
 	noticeTrackerUserLogout(node)
 	return user.Db.Close()
-}
-
-func noticeTrackerUserLogin(user dao.User) {
-	loginRequest := trackerBean.ObdNodeUserLoginRequest{}
-	loginRequest.UserId = user.PeerId
-	sendMsgToTracker(enum.MsgType_Tracker_UserLogin_304, loginRequest)
-}
-
-func noticeTrackerUserLogout(user dao.User) {
-	loginRequest := trackerBean.ObdNodeUserLoginRequest{}
-	loginRequest.UserId = user.PeerId
-	sendMsgToTracker(enum.MsgType_Tracker_UserLogout_305, loginRequest)
 }

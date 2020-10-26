@@ -27,6 +27,7 @@ type ChannelState int
 const (
 	ChannelState_Create            ChannelState = 10
 	ChannelState_WaitFundAsset     ChannelState = 11
+	ChannelState_NewTx             ChannelState = 12
 	ChannelState_CanUse            ChannelState = 20
 	ChannelState_Close             ChannelState = 21
 	ChannelState_HtlcTx            ChannelState = 22
@@ -42,12 +43,14 @@ type ChannelInfo struct {
 	AddressA                   string       `json:"address_a"`
 	PeerIdB                    string       `storm:"index" json:"peer_id_b"`
 	PubKeyB                    string       `json:"pub_key_b"`
+	FundeeAddressIndex         int          `json:"fundee_address_index"`
 	AddressB                   string       `json:"address_b"`
 	ChannelAddress             string       `json:"channel_address"`
 	ChannelAddressRedeemScript string       `json:"channel_address_redeem_script"`
 	ChannelAddressScriptPubKey string       `json:"channel_address_script_pub_key"`
 	PropertyId                 int64        `json:"property_id"`
 	Amount                     float64      `json:"amount"`
+	BtcAmount                  float64      `json:"btc_amount"`
 	CurrState                  ChannelState `json:"curr_state"`
 	RefuseReason               string       `json:"refuse_reason"`
 	CreateBy                   string       `json:"create_by"`
@@ -133,6 +136,7 @@ type MinerFeeRedeemTransaction struct {
 	FundingTxId        string    `json:"funding_tx_id"`
 	Hex                string    `json:"hex"`
 	Txid               string    `json:"txid"`
+	IsFinish           bool      `json:"is_finish"`
 	CreateAt           time.Time `json:"create_at"`
 }
 
@@ -160,6 +164,7 @@ type CommitmentTransaction struct {
 	TxType CommitmentTransactionType `json:"tx_type"` // 0 rsmc 1 htlc
 
 	//RSMC
+	RSMCTempAddressIndex         int     `json:"rsmc_temp_address_index"`   //aliceTempRemc or bobTempRsmc
 	RSMCTempAddressPubKey        string  `json:"rsmc_temp_address_pub_key"` //aliceTempRemc or bobTempRsmc
 	RSMCMultiAddress             string  `json:"rsmc_multi_address"`        //output aliceTempRsmc&bob  or alice&bobTempRsmc  multiAddr
 	RSMCRedeemScript             string  `json:"rsmc_redeem_script"`
@@ -174,9 +179,10 @@ type CommitmentTransaction struct {
 	AmountToCounterparty           float64 `json:"amount_to_counterparty"`               //amount to bob(if Cna) or alice(if Cnb)
 	FromCounterpartySideForMeTxHex string  `json:"from_counterparty_side_for_me_tx_hex"` //对方给自己的转账部分，防止对方不广播此交易
 	//htlc
-	HtlcRoutingPacket            string  `json:"htlc_routing_packet"`       //借道Path
-	HtlcCltvExpiry               int     `json:"htlc_cltv_expiry"`          //借道的最大超时 分钟为单位
-	BeginBlockHeight             int     `json:"begin_block_height"`        //借道时的区块高度
+	HtlcRoutingPacket            string  `json:"htlc_routing_packet"` //借道Path
+	HtlcCltvExpiry               int     `json:"htlc_cltv_expiry"`    //借道的最大超时 分钟为单位
+	BeginBlockHeight             int     `json:"begin_block_height"`  //借道时的区块高度
+	HTLCTempAddressIndex         int     `json:"htlc_temp_address_index"`
 	HTLCTempAddressPubKey        string  `json:"htlc_temp_address_pub_key"` //alice for htlc or bob for htlc
 	HTLCMultiAddress             string  `json:"htlc_multi_address"`        //output aliceTempHtlc&bob  or alice&bobTempHtlc  multiAddr
 	HTLCRedeemScript             string  `json:"htlc_redeem_script"`
@@ -195,6 +201,13 @@ type CommitmentTransaction struct {
 	SendAt       time.Time   `json:"send_at"`
 	LastEditTime time.Time   `json:"last_edit_time"`
 	Owner        string      `json:"owner"`
+}
+
+type PayeeRevokeAndAcknowledgeCommitment struct {
+	Id               int    `storm:"id,increment" json:"id" `
+	ChannelId        string `json:"channel_id"`
+	CommitmentTxHash string `json:"commitment_tx_hash"`
+	Approval         bool   `json:"approval"`
 }
 
 // close channel , alice or bob wait 1000 sequence to drawback the balance

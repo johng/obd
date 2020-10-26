@@ -1,47 +1,19 @@
 package bean
 
 import (
-	"fmt"
 	"github.com/omnilaboratory/obd/bean/chainhash"
 	"github.com/omnilaboratory/obd/bean/enum"
-	"time"
 )
 
-// 设置时间格式
-const (
-	timeFormat = "2006-01-02"
-)
+var CurrObdNodeInfo obdNodeInfo
 
-var MyObdNodeInfo ObdNodeInfo
-
-type ObdNodeInfo struct {
+type obdNodeInfo struct {
 	ChainNetworkType string `json:"chain_network_type"`
 	OmniCoreVersion  string `json:"omni_core_version"`
 	BtcCoreVersion   string `json:"btc_core_version"`
 	TrackerNodeId    string `json:"tracker_node_id"`
 	P2pAddress       string `json:"p2p_address"`
 	WebsocketLink    string `json:"websocket_link"`
-}
-
-// 自定义类型
-type JsonDate time.Time
-
-// JsonDate反序列化
-func (t *JsonDate) UnmarshalJSON(data []byte) (err error) {
-	newTime, err := time.ParseInLocation("\""+timeFormat+"\"", string(data), time.Local)
-	*t = JsonDate(newTime)
-	return
-}
-
-// JsonDate序列化
-func (t JsonDate) MarshalJSON() ([]byte, error) {
-	timeStr := fmt.Sprintf("\"%s\"", time.Time(t).Format(timeFormat))
-	return []byte(timeStr), nil
-}
-
-// string方法
-func (t JsonDate) String() string {
-	return time.Time(t).Format(timeFormat)
 }
 
 //obd客户端请求消息体
@@ -72,7 +44,7 @@ const (
 )
 
 //TLV 附加消息
-type TypeLengthValue struct {
+type typeLengthValue struct {
 	ValueType string      `json:"value_type"`
 	Length    int         `json:"length"`
 	Value     interface{} `json:"value"`
@@ -81,8 +53,10 @@ type TypeLengthValue struct {
 // -100032
 type SendChannelOpen struct {
 	//充值的pubKey
-	FundingPubKey string `json:"funding_pubkey"`
-	TypeLengthValue
+	FundingPubKey      string `json:"funding_pubkey"`
+	FunderAddressIndex int    `json:"funder_address_index"`
+	IsPrivate          bool   `json:"is_private"` // channel is a private channel, can not use htlc hop
+	typeLengthValue
 }
 
 //https://github.com/obdlayer/Omni-BOLT-spec/blob/master/OmniBOLT-03-RSMC-and-OmniLayer-Transactions.md
@@ -113,15 +87,16 @@ type RequestOpenChannel struct {
 // -100033 接收方给自己的obd发送回复开通通道的请求
 type SendSignOpenChannel struct {
 	FundingPubKey      string `json:"funding_pubkey"`
+	FundeeAddressIndex int    `json:"fundee_address_index"`
 	TemporaryChannelId string `json:"temporary_channel_id"`
 	Approval           bool   `json:"approval"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type: -38 (close_channel)
 type CloseChannel struct {
 	ChannelId string `json:"channel_id"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type: -39 (close_channel_sign)
@@ -129,14 +104,7 @@ type CloseChannelSign struct {
 	ChannelId               string `json:"channel_id"`
 	RequestCloseChannelHash string `json:"request_close_channel_hash"`
 	Approval                bool   `json:"approval"` // true agree false disagree
-	TypeLengthValue
-}
-
-//type: -35107 (SendBreachRemedyTransaction)
-type SendBreachRemedyTransaction struct {
-	ChannelId                string `json:"channel_id"`
-	ChannelAddressPrivateKey string `json:"channel_address_private_key"` // openChannel address
-	TypeLengthValue
+	typeLengthValue
 }
 
 // type: -100340
@@ -144,7 +112,7 @@ type SendRequestFundingBtc struct {
 	TemporaryChannelId       string `json:"temporary_channel_id"`
 	FundingTxHex             string `json:"funding_tx_hex"`
 	ChannelAddressPrivateKey string `json:"channel_address_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 // type: -340
@@ -164,7 +132,7 @@ type SendSignFundingBtc struct {
 	FundingTxid              string `json:"funding_txid"`
 	ChannelAddressPrivateKey string `json:"channel_address_private_key"`
 	Approval                 bool   `json:"approval"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 // -100034
@@ -174,10 +142,11 @@ type SendRequestAssetFunding struct {
 	MaxAssets                float64 `json:"max_assets"`
 	AmountA                  float64 `json:"amount_a"`
 	FundingTxHex             string  `json:"funding_tx_hex"`
+	TempAddressIndex         int     `json:"temp_address_index"`
 	TempAddressPubKey        string  `json:"temp_address_pub_key"`
 	TempAddressPrivateKey    string  `json:"temp_address_private_key"`
 	ChannelAddressPrivateKey string  `json:"channel_address_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 // type: -340
@@ -207,13 +176,13 @@ type SignAssetFunding struct {
 	//amount of the asset on Bob side
 	AmountB float64 `json:"amount_b"`
 	//signature of fundee Bob
-	FundeeChannelAddressPrivateKey string `json:"fundee_channel_address_private_key"`
+	ChannelAddressPrivateKey string `json:"channel_address_private_key"`
 	//redeem script used to generate P2SH address
 	RedeemScript string `json:"redeem_script"`
 	//hash of redeemScript
 	P2shAddress string `json:"p2sh_address"`
 	//Approval    bool   `json:"approval"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type: -100351 (commitment_tx)
@@ -222,9 +191,10 @@ type SendRequestCommitmentTx struct {
 	Amount                    float64 `json:"amount"`     //amount of the payment
 	ChannelAddressPrivateKey  string  `json:"channel_address_private_key"`
 	LastTempAddressPrivateKey string  `json:"last_temp_address_private_key"`
+	CurrTempAddressIndex      int     `json:"curr_temp_address_index"`
 	CurrTempAddressPubKey     string  `json:"curr_temp_address_pub_key"`
 	CurrTempAddressPrivateKey string  `json:"curr_temp_address_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //p2p 351
@@ -252,10 +222,11 @@ type PayeeSendSignCommitmentTx struct {
 	MsgHash                   string `json:"msg_hash"`
 	ChannelAddressPrivateKey  string `json:"channel_address_private_key"`   // bob private key
 	LastTempAddressPrivateKey string `json:"last_temp_address_private_key"` // bob2's private key
-	CurrTempAddressPubKey     string `json:"curr_temp_address_pub_key"`     // bob3 or alice3
+	CurrTempAddressIndex      int    `json:"curr_temp_address_index"`
+	CurrTempAddressPubKey     string `json:"curr_temp_address_pub_key"` // bob3 or alice3
 	CurrTempAddressPrivateKey string `json:"curr_temp_address_private_key"`
 	Approval                  bool   `json:"approval"` // true agree false disagree
-	TypeLengthValue
+	typeLengthValue
 }
 
 //p2p -100352 -> 353
@@ -270,26 +241,32 @@ type PayeeSignCommitmentTxOfP2p struct {
 	SignedRsmcHex             string `json:"signed_rsmc_hex"`
 	SignedToCounterpartyTxHex string `json:"signed_to_counterparty_tx_hex"`
 	PayerRdHex                string `json:"payer_rd_hex"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type -100402: invoice
 type HtlcRequestInvoice struct {
-	NetType             string   `json:"net_type"`               //解析用
-	RecipientNodePeerId string   `json:"recipient_node_peer_id"` //解析用
-	RecipientUserPeerId string   `json:"recipient_user_peer_id"` //解析用
+	NetType string `json:"net_type"` //解析用
+	HtlcRequestFindPathInfo
+	typeLengthValue
+}
+
+type HtlcRequestFindPathInfo struct {
+	RecipientNodePeerId string   `json:"recipient_node_peer_id"`
+	RecipientUserPeerId string   `json:"recipient_user_peer_id"`
 	H                   string   `json:"h"`
 	ExpiryTime          JsonDate `json:"expiry_time"`
 	PropertyId          int64    `json:"property_id"`
 	Amount              float64  `json:"amount"`
 	Description         string   `json:"description"`
-	TypeLengthValue
+	IsPrivate           bool     `json:"is_private"`
 }
 
 //type --100401: alice tell carl ,she wanna transfer some money to Carl
 type HtlcRequestFindPath struct {
 	Invoice string `json:"invoice"`
-	TypeLengthValue
+	HtlcRequestFindPathInfo
+	typeLengthValue
 }
 
 // type 40 payer start htlc tx
@@ -300,27 +277,32 @@ type AddHtlcRequest struct {
 	H                                    string  `json:"h"`
 	CltvExpiry                           int     `json:"cltv_expiry"` //发起者设定的总的等待的区块个数
 	RoutingPacket                        string  `json:"routing_packet"`
-	ChannelAddressPrivateKey             string  `json:"channel_address_private_key"`                 //	开通通道用到的地址的私钥
-	LastTempAddressPrivateKey            string  `json:"last_temp_address_private_key"`               //	上个RSMC委托交易用到的临时地址的私钥
-	CurrRsmcTempAddressPubKey            string  `json:"curr_rsmc_temp_address_pub_key"`              //	创建Cnx中的toRsmc的部分使用的临时地址的公钥
-	CurrRsmcTempAddressPrivateKey        string  `json:"curr_rsmc_temp_address_private_key"`          //	创建Cnx中的toRsmc的部分使用的临时地址的私钥
-	CurrHtlcTempAddressPubKey            string  `json:"curr_htlc_temp_address_pub_key"`              //	创建Cnx中的toHtlc的部分使用的临时地址的公钥
-	CurrHtlcTempAddressPrivateKey        string  `json:"curr_htlc_temp_address_private_key"`          //	创建Cnx中的toHtlc的部分使用的临时地址的私钥
+	ChannelAddressPrivateKey             string  `json:"channel_address_private_key"`   //	开通通道用到的地址的私钥
+	LastTempAddressPrivateKey            string  `json:"last_temp_address_private_key"` //	上个RSMC委托交易用到的临时地址的私钥
+	CurrRsmcTempAddressIndex             int     `json:"curr_rsmc_temp_address_index"`
+	CurrRsmcTempAddressPubKey            string  `json:"curr_rsmc_temp_address_pub_key"`     //	创建Cnx中的toRsmc的部分使用的临时地址的公钥
+	CurrRsmcTempAddressPrivateKey        string  `json:"curr_rsmc_temp_address_private_key"` //	创建Cnx中的toRsmc的部分使用的临时地址的私钥
+	CurrHtlcTempAddressIndex             int     `json:"curr_htlc_temp_address_index"`
+	CurrHtlcTempAddressPubKey            string  `json:"curr_htlc_temp_address_pub_key"`     //	创建Cnx中的toHtlc的部分使用的临时地址的公钥
+	CurrHtlcTempAddressPrivateKey        string  `json:"curr_htlc_temp_address_private_key"` //	创建Cnx中的toHtlc的部分使用的临时地址的私钥
+	CurrHtlcTempAddressForHt1aIndex      int     `json:"curr_htlc_temp_address_for_ht1a_index"`
 	CurrHtlcTempAddressForHt1aPubKey     string  `json:"curr_htlc_temp_address_for_ht1a_pub_key"`     //	创建Ht1a中生成ht1a的输出的Rmsc的临时地址的公钥
 	CurrHtlcTempAddressForHt1aPrivateKey string  `json:"curr_htlc_temp_address_for_ht1a_private_key"` //	创建Ht1a中生成ht1a的输出的Rmsc的临时地址的私钥
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type -100041: bob sign the request for the interNode
 type HtlcSignGetH struct {
 	PayerCommitmentTxHash         string `json:"payer_commitment_tx_hash"`
-	ChannelAddressPrivateKey      string `json:"channel_address_private_key"`        //	开通通道用到的私钥
-	LastTempAddressPrivateKey     string `json:"last_temp_address_private_key"`      //	上个RSMC委托交易用到的临时私钥
+	ChannelAddressPrivateKey      string `json:"channel_address_private_key"`   //	开通通道用到的私钥
+	LastTempAddressPrivateKey     string `json:"last_temp_address_private_key"` //	上个RSMC委托交易用到的临时私钥
+	CurrRsmcTempAddressIndex      int    `json:"curr_rsmc_temp_address_index"`
 	CurrRsmcTempAddressPubKey     string `json:"curr_rsmc_temp_address_pub_key"`     //	创建Cnx中的toRsmc的部分使用的临时地址的公钥
 	CurrRsmcTempAddressPrivateKey string `json:"curr_rsmc_temp_address_private_key"` //	创建Cnx中的toRsmc的部分使用的临时地址的私钥
+	CurrHtlcTempAddressIndex      int    `json:"curr_htlc_temp_address_index"`
 	CurrHtlcTempAddressPubKey     string `json:"curr_htlc_temp_address_pub_key"`     //	创建Cnx中的toHtlc的部分使用的临时地址的公钥
 	CurrHtlcTempAddressPrivateKey string `json:"curr_htlc_temp_address_private_key"` //	创建Cnx中的toHtlc的部分使用的临时地址的私钥
-	TypeLengthValue
+	typeLengthValue
 }
 
 // -42 msg
@@ -366,10 +348,11 @@ type PayeeCreateHt1aRDForPayer struct {
 type HtlcSendR struct {
 	ChannelId                            string `json:"channel_id"`
 	R                                    string `json:"r"`
-	ChannelAddressPrivateKey             string `json:"channel_address_private_key"`             // The key of Sender. Example Bob send R to Alice, the Sender is Bob.
+	ChannelAddressPrivateKey             string `json:"channel_address_private_key"` // The key of Sender. Example Bob send R to Alice, the Sender is Bob.
+	CurrHtlcTempAddressForHE1bIndex      int    `json:"curr_htlc_temp_address_for_he1b_index"`
 	CurrHtlcTempAddressForHE1bPubKey     string `json:"curr_htlc_temp_address_for_he1b_pub_key"` // These keys of HE1b output. Example Bob send R to Alice, these is Bob3's.
 	CurrHtlcTempAddressForHE1bPrivateKey string `json:"curr_htlc_temp_address_for_he1b_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type -46: Middleman node check out if R is correct
@@ -378,7 +361,7 @@ type HtlcCheckRAndCreateTx struct {
 	R                        string `json:"r"`
 	MsgHash                  string `json:"msg_hash"`
 	ChannelAddressPrivateKey string `json:"channel_address_private_key"` // The key of creator tx. Example Bob send R to Alice, that is Alice's.
-	TypeLengthValue
+	typeLengthValue
 }
 
 // -47
@@ -402,9 +385,10 @@ type HtlcRequestCloseCurrTx struct {
 	LastRsmcTempAddressPrivateKey        string `json:"last_rsmc_temp_address_private_key"`
 	LastHtlcTempAddressPrivateKey        string `json:"last_htlc_temp_address_private_key"`
 	LastHtlcTempAddressForHtnxPrivateKey string `json:"last_htlc_temp_address_for_htnx_private_key"`
+	CurrRsmcTempAddressIndex             int    `json:"curr_rsmc_temp_address_index"`
 	CurrRsmcTempAddressPubKey            string `json:"curr_rsmc_temp_address_pub_key"`
 	CurrRsmcTempAddressPrivateKey        string `json:"curr_rsmc_temp_address_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type -50: receiver sign the close request
@@ -414,9 +398,10 @@ type HtlcSignCloseCurrTx struct {
 	LastRsmcTempAddressPrivateKey        string `json:"last_rsmc_temp_address_private_key"`
 	LastHtlcTempAddressPrivateKey        string `json:"last_htlc_temp_address_private_key"`
 	LastHtlcTempAddressForHtnxPrivateKey string `json:"last_htlc_temp_address_for_htnx_private_key"`
+	CurrRsmcTempAddressIndex             int    `json:"curr_rsmc_temp_address_index"`
 	CurrRsmcTempAddressPubKey            string `json:"curr_rsmc_temp_address_pub_key"`
 	CurrRsmcTempAddressPrivateKey        string `json:"curr_rsmc_temp_address_private_key"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //50->51
@@ -512,7 +497,7 @@ type AtomicSwapRequest struct {
 	PropertyReceived    int64   `json:"property_received"`
 	TransactionId       string  `json:"transaction_id"`
 	TimeLocker          uint32  `json:"time_locker"`
-	TypeLengthValue
+	typeLengthValue
 }
 
 //type -81: MsgType_Atomic_Swap_Accept_N81

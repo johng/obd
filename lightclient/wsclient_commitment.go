@@ -126,8 +126,8 @@ func (client *Client) commitmentTxModule(msg bean.RequestMessage) (enum.SendTarg
 			}
 		}
 		client.sendToMyself(msg.Type, status, data)
-	case enum.MsgType_SendBreachRemedyTransaction_3206:
-		node, err := service.ChannelService.SendBreachRemedyTransaction(msg.Data, client.User)
+	case enum.MsgType_CommitmentTx_SendSomeCommitmentById_3206:
+		node, err := service.CommitmentTxService.SendSomeCommitmentById(msg.Data, client.User)
 		if err != nil {
 			data = err.Error()
 		} else {
@@ -191,13 +191,18 @@ func (client *Client) commitmentTxSignModule(msg bean.RequestMessage) (enum.Send
 		}
 		if status {
 			msg.Type = enum.MsgType_CommitmentTxSigned_ToAliceSign_353
-			_ = client.sendDataToP2PUser(msg, status, data)
-
-			if retData.Approval == false {
-				msg.Type = enum.MsgType_CommitmentTxSigned_SendRevokeAndAcknowledgeCommitmentTransaction_352
-				client.sendToMyself(msg.Type, status, data)
+			err = client.sendDataToP2PUser(msg, status, data)
+			if err != nil {
+				status = false
+				data = err.Error()
+			} else {
+				if retData.Approval == false {
+					msg.Type = enum.MsgType_CommitmentTxSigned_SendRevokeAndAcknowledgeCommitmentTransaction_352
+					client.sendToMyself(msg.Type, status, data)
+				}
 			}
-		} else {
+		}
+		if status == false {
 			client.sendToMyself(msg.Type, status, data)
 		}
 	}

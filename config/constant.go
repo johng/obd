@@ -10,6 +10,7 @@ import (
 
 const (
 	Init_node_chain_hash = "1EXoDusjGwvnjZUyKkxZ4UHEf77z6A5S4P"
+	BtcNeedFundTimes     = 3
 	//Dust                 = 0.00000540
 )
 
@@ -23,28 +24,11 @@ func GetHtlcFee() float64 {
 	return 0.00001
 }
 
-// ins*150 + outs*34 + 10 + 80 = transaction size
-// https://shimo.im/docs/5w9Fi1c9vm8yp1ly
-//https://bitcoinfees.earn.com/api/v1/fees/recommended
-func GetMinerFee() float64 {
-	price := httpGetRecommendedMiner()
-	if price == 0 {
-		price = 6
-	} else {
-		price = price / 6
-	}
-	if price < 4 {
-		price = 4
-	}
-	txSize := 150 + 68 + 90
-	result, _ := decimal.NewFromFloat(float64(txSize) * price).Div(decimal.NewFromFloat(100000000)).Round(8).Float64()
-	return result
-}
-
 var minerFeePricePerByte = 0.0
 var successGetMinerFeePriceAt time.Time
 
 func httpGetRecommendedMiner() (price float64) {
+
 	if successGetMinerFeePriceAt.IsZero() == false {
 		now := time.Now().Add(-6 * time.Hour)
 		if now.Before(successGetMinerFeePriceAt) {
@@ -52,9 +36,10 @@ func httpGetRecommendedMiner() (price float64) {
 		}
 	}
 	url := "https://bitcoinfees.earn.com/api/v1/fees/recommended"
-	client := http.Client{Timeout: 5 * time.Second}
+	client := http.Client{Timeout: time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
+		successGetMinerFeePriceAt = time.Now()
 		return 0
 	}
 	defer resp.Body.Close()
@@ -74,5 +59,5 @@ func GetMinMinerFee(ins int) float64 {
 }
 
 func GetOmniDustBtc() float64 {
-	return 0.00000546
+	return 0.0000054
 }

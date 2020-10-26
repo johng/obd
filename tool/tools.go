@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/config"
 	"golang.org/x/crypto/ripemd160"
 	"io"
@@ -71,15 +72,17 @@ func GetAddressFromPubKey(pubKey string) (address string, err error) {
 		log.Println(err)
 		return "", errors.New("invalid pubKey")
 	}
-	// test RegressionNetParams
+
 	// main MainNetParams
 	var net *chaincfg.Params
 	if strings.Contains(config.ChainNode_Type, "main") {
 		net = &chaincfg.MainNetParams
 	}
+	// test TestNet3Params
 	if strings.Contains(config.ChainNode_Type, "test") {
 		net = &chaincfg.TestNet3Params
 	}
+	// reg RegressionNetParams
 	if strings.Contains(config.ChainNode_Type, "reg") {
 		net = &chaincfg.RegressionNetParams
 	}
@@ -98,19 +101,19 @@ func GetAddressFromPubKey(pubKey string) (address string, err error) {
 
 func GetPubKeyFromWifAndCheck(privKeyHex string, pubKey string) (pubKeyFromWif string, err error) {
 	if CheckIsString(&privKeyHex) == false {
-		return "", errors.New("wrong private key")
+		return "", errors.New(enum.Tips_common_empty + "private key")
 	}
 	if CheckIsString(&pubKey) == false {
-		return "", errors.New("wrong pubKey")
+		return "", errors.New(enum.Tips_common_empty + "pubKey")
 	}
 
 	wif, err := btcutil.DecodeWIF(privKeyHex)
 	if err != nil {
-		return "", errors.New("wrong private key")
+		return "", errors.New(enum.Tips_common_wrong + "private key")
 	}
 	pubKeyFromWif = hex.EncodeToString(wif.PrivKey.PubKey().SerializeCompressed())
 	if pubKeyFromWif != pubKey {
-		return "", errors.New("private key and pubkey are not parent relationship")
+		return "", errors.New(fmt.Sprintf(enum.Tips_rsmc_notPairPrivAndPubKey, privKeyHex, pubKey))
 	}
 	return pubKeyFromWif, nil
 }
@@ -166,6 +169,12 @@ func GetMacAddrs() (macAddrs string) {
 }
 
 // get obd node id
+func GetUserPeerId(mnemonic string) string {
+	source := mnemonic + "@" + GetMacAddrs() + ":" + strconv.Itoa(config.ServerPort) + "in" + config.ChainNode_Type
+	return SignMsgWithSha256([]byte(source))
+}
+
+// get obd node id
 func GetObdNodeId() string {
 	source := GetMacAddrs() + ":" + strconv.Itoa(config.ServerPort)
 	return SignMsgWithSha256([]byte(source)) + config.ChainNode_Type
@@ -175,21 +184,4 @@ func GetObdNodeId() string {
 func GetTrackerNodeId() string {
 	source := GetMacAddrs() + ":" + strconv.Itoa(config.TrackerServerPort)
 	return SignMsgWithSha256([]byte(source))
-}
-
-func GetIPs() (ips string) {
-	interfaceAddr, err := net.InterfaceAddrs()
-	if err != nil {
-		fmt.Printf("fail to get net interface addrs: %v", err)
-		return ips
-	}
-	for _, address := range interfaceAddr {
-		ipNet, isValidIpNet := address.(*net.IPNet)
-		if isValidIpNet && !ipNet.IP.IsLoopback() {
-			if ipNet.IP.To4() != nil {
-				return ipNet.IP.String()
-			}
-		}
-	}
-	return ips
 }

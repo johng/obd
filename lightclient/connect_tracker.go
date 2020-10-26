@@ -18,20 +18,15 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
 	"reflect"
 	"strings"
 	"time"
 )
 
 var conn *websocket.Conn
-var interrupt chan os.Signal
 var ticker3m *time.Ticker
 
 func ConnectToTracker() (err error) {
-	interrupt = make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
 
 	u := url.URL{Scheme: "ws", Host: config.TrackerHost, Path: "/ws"}
 	log.Printf("begin to connect to tracker: %s", u.String())
@@ -41,27 +36,54 @@ func ConnectToTracker() (err error) {
 		log.Println("error ================ fail to dial tracker:", err)
 		return err
 	}
-	service.TrackerWsConn = conn
+	if service.TrackerChan == nil {
+		service.TrackerChan = make(chan []byte)
+	}
+
 	nodeId := httpCheckChainTypeByTracker()
 	if nodeId == 0 {
 		return errors.New("fail to login tracker")
 	}
-	if ticker3m != nil {
+	if isReset {
+		updateP2pAddressLogin()
+		go goroutine()
+	}
+
+	if ticker3m == nil {
 		startSchedule()
 	}
 	return nil
 }
 
-func SynData() {
+var isReset = true
 
+func goroutine() {
+	isReset = false
+	ticker := time.NewTicker(time.Minute * 2)
+	defer ticker.Stop()
+
+	defer func(ticker *time.Ticker) {
+		if r := recover(); r != nil {
+			log.Println("tracker goroutine recover")
+			ticker.Stop()
+			conn = nil
+			isReset = true
+		}
+	}(ticker)
 	defer conn.Close()
-	done := make(chan struct{})
+
+	// read message
 	go func() {
-		defer close(done)
 		for {
+			if conn == nil {
+				isReset = true
+				return
+			}
+
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Println("read:", err)
+				isReset = true
+				log.Println("socket to tracker get err:", err)
 				conn = nil
 				return
 			}
@@ -79,55 +101,44 @@ func SynData() {
 					if v.Kind() == reflect.Map {
 						dataMap := replyMessage.Result.(map[string]interface{})
 						requestMessage.RecipientUserPeerId = dataMap["senderPeerId"].(string)
-						requestMessage.Data = dataMap["h"].(string) + "_" + dataMap["path"].(string)
+						requestMessage.Data = dataMap["h"].(string) + "_" + dataMap["path"].(string) + "_" + tool.FloatToString(dataMap["amount"].(float64), 8)
+						//requestMessage.Data = dataMap["h"].(string) + "_" + dataMap["path"].(string)
 					}
 					htlcTrackerDealModule(requestMessage)
 				}
 			}
 		}
 	}()
-	updateP2pAddressLogin()
-	sycUserInfos()
-	sycChannelInfos()
 
-	ticker := time.NewTicker(time.Minute * 2)
-	defer ticker.Stop()
-
+	// heartbeat and check whether
 	for {
 		select {
-		case <-done:
-			return
 		case t := <-ticker.C:
-			info := make(map[string]interface{})
-			info["type"] = enum.MsgType_Tracker_HeartBeat_302
-			info["data"] = t.String()
-			bytes, err := json.Marshal(info)
-			err = conn.WriteMessage(websocket.TextMessage, bytes)
-			if err != nil {
-				log.Println("write:", err)
+			if conn != nil {
+				info := make(map[string]interface{})
+				info["type"] = enum.MsgType_Tracker_HeartBeat_302
+				info["data"] = t.String()
+				bytes, err := json.Marshal(info)
+				err = conn.WriteMessage(websocket.TextMessage, bytes)
+				if err != nil {
+					log.Println("HeartBeat:", err)
+					return
+				}
+			} else {
 				return
 			}
-		case <-interrupt:
-			log.Println("ws to tracker interrupt")
-			// Cleanly close the connection by sending a close message and then
-			// waiting (with timeout) for the server to close the connection.
-			err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			if err != nil {
-				conn = nil
-				log.Println("write close:", err)
-				return
-			}
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-			}
-			return
 		}
 	}
 }
 
+func SynData() {
+	updateP2pAddressLogin()
+	sycUserInfos()
+	sycChannelInfos()
+}
+
 func httpCheckChainTypeByTracker() (nodeId int) {
-	bean.MyObdNodeInfo.TrackerNodeId = tool.GetObdNodeId()
+	bean.CurrObdNodeInfo.TrackerNodeId = tool.GetObdNodeId()
 	url := "http://" + config.TrackerHost + "/api/v1/checkChainType?nodeId=" + tool.GetObdNodeId() + "&chainType=" + config.ChainNode_Type
 	resp, err := http.Get(url)
 	if err != nil {
@@ -152,14 +163,14 @@ func updateP2pAddressLogin() {
 	if err != nil {
 		log.Println(err)
 	} else {
-		sendMsgToTracker(string(bytes))
+		sendMsgToTracker(bytes)
 	}
 }
 
 func sycUserInfos() {
 
 	nodes := make([]trackerBean.ObdNodeUserLoginRequest, 0)
-	for userId, _ := range globalWsClientManager.OnlineUserMap {
+	for userId, _ := range globalWsClientManager.OnlineClientMap {
 		user := trackerBean.ObdNodeUserLoginRequest{}
 		user.UserId = userId
 		nodes = append(nodes, user)
@@ -171,7 +182,7 @@ func sycUserInfos() {
 		info["data"] = nodes
 		bytes, err := json.Marshal(info)
 		if err == nil {
-			sendMsgToTracker(string(bytes))
+			sendMsgToTracker(bytes)
 		}
 	}
 }
@@ -187,7 +198,7 @@ func sycChannelInfos() {
 		if strings.HasPrefix(f.Name(), "user_") && strings.HasSuffix(f.Name(), ".db") {
 			peerId := strings.TrimPrefix(f.Name(), "user_")
 			peerId = strings.TrimSuffix(peerId, ".db")
-			value, exists := globalWsClientManager.OnlineUserMap[peerId]
+			value, exists := globalWsClientManager.OnlineClientMap[peerId]
 			if exists && value != nil {
 				userPeerIds = append(userPeerIds, peerId)
 			} else {
@@ -199,7 +210,7 @@ func sycChannelInfos() {
 	nodes := make([]trackerBean.ChannelInfoRequest, 0)
 
 	for _, peerId := range userPeerIds {
-		client, _ := globalWsClientManager.OnlineUserMap[peerId]
+		client, _ := globalWsClientManager.OnlineClientMap[peerId]
 		if client != nil {
 			checkChannel(client.User.Db, nodes)
 		}
@@ -217,10 +228,15 @@ func sycChannelInfos() {
 		db, err := storm.Open(_dir + "/" + dbName)
 		if err == nil {
 			var channelInfos []dao.ChannelInfo
-			err = db.All(&channelInfos)
+			err = db.Select(
+				q.Eq("IsPrivate", false),
+				q.Or(
+					q.Eq("CurrState", dao.ChannelState_CanUse),
+					q.Eq("CurrState", dao.ChannelState_Close),
+					q.Eq("CurrState", dao.ChannelState_HtlcTx))).Find(&channelInfos)
 			if err == nil {
 				for _, channelInfo := range channelInfos {
-					if len(channelInfo.ChannelId) > 0 {
+					if len(channelInfo.ChannelId) > 0 && channelInfo.IsPrivate == false {
 						if channelInfo.CurrState == dao.ChannelState_CanUse || channelInfo.CurrState == dao.ChannelState_Close || channelInfo.CurrState == dao.ChannelState_HtlcTx {
 							commitmentTransaction := dao.CommitmentTransaction{}
 							err = db.Select(q.Eq("ChannelId", channelInfo.ChannelId)).OrderBy("CreateAt").Reverse().First(&commitmentTransaction)
@@ -257,17 +273,22 @@ func sycChannelInfos() {
 		info["data"] = nodes
 		bytes, err := json.Marshal(info)
 		if err == nil {
-			sendMsgToTracker(string(bytes))
+			sendMsgToTracker(bytes)
 		}
 	}
 }
 
 func checkChannel(db storm.Node, nodes []trackerBean.ChannelInfoRequest) {
 	var channelInfos []dao.ChannelInfo
-	err := db.All(&channelInfos)
+	err := db.Select(
+		q.Eq("IsPrivate", false),
+		q.Or(
+			q.Eq("CurrState", dao.ChannelState_CanUse),
+			q.Eq("CurrState", dao.ChannelState_Close),
+			q.Eq("CurrState", dao.ChannelState_HtlcTx))).Find(&channelInfos)
 	if err == nil {
 		for _, channelInfo := range channelInfos {
-			if len(channelInfo.ChannelId) > 0 {
+			if len(channelInfo.ChannelId) > 0 && channelInfo.IsPrivate == false {
 				if channelInfo.CurrState == dao.ChannelState_CanUse || channelInfo.CurrState == dao.ChannelState_Close || channelInfo.CurrState == dao.ChannelState_HtlcTx {
 					commitmentTransaction := dao.CommitmentTransaction{}
 					err = db.Select(q.Eq("ChannelId", channelInfo.ChannelId)).OrderBy("CreateAt").Reverse().First(&commitmentTransaction)
@@ -297,8 +318,17 @@ func checkChannel(db storm.Node, nodes []trackerBean.ChannelInfoRequest) {
 	}
 }
 
-func sendMsgToTracker(msg string) {
-	err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
+func sendMsgToTracker(msg []byte) {
+	//log.Println("send to tracker", string(msg))
+	if conn == nil {
+		isReset = true
+		err := ConnectToTracker()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+	err := conn.WriteMessage(websocket.TextMessage, msg)
 	if err != nil {
 		log.Println("write:", err)
 		return
@@ -306,6 +336,14 @@ func sendMsgToTracker(msg string) {
 }
 
 func startSchedule() {
+	go func() {
+		for {
+			select {
+			case msg := <-service.TrackerChan:
+				sendMsgToTracker(msg)
+			}
+		}
+	}()
 
 	go func() {
 		ticker3m = time.NewTicker(3 * time.Minute)
@@ -313,8 +351,8 @@ func startSchedule() {
 		for {
 			select {
 			case t := <-ticker3m.C:
-				log.Println("timer 3min", t)
 				if conn == nil {
+					log.Println("reconnect tracker ", t)
 					_ = ConnectToTracker()
 				}
 			}

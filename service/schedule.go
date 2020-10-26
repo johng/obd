@@ -22,9 +22,6 @@ func (service *scheduleManager) StartSchedule() {
 		ticker10m := time.NewTicker(10 * time.Minute)
 		defer ticker10m.Stop()
 
-		//ticker := time.NewTicker(10 * time.Hour)
-		//defer ticker.Stop()
-
 		for {
 			select {
 			case t := <-ticker10m.C:
@@ -98,7 +95,7 @@ func checkRsmcAndSendBR(db storm.Node) {
 							_ = db.Select(q.Eq("CurrState", dao.TxInfoState_CreateAndSign), q.Eq("InputTxid", txid)).First(rsmcBreachRemedy)
 							if rsmcBreachRemedy != nil && rsmcBreachRemedy.Id > 0 {
 								_, err = rpcClient.SendRawTransaction(rsmcBreachRemedy.BrTxHex)
-								if err != nil {
+								if err == nil {
 									log.Println("send rsmcBr by timer")
 									rsmcBreachRemedy.CurrState = dao.TxInfoState_SendHex
 									rsmcBreachRemedy.SendAt = time.Now()
@@ -162,32 +159,6 @@ func checkRsmcAndSendBR(db storm.Node) {
 						}
 					}
 				}
-			}
-		}
-	}
-}
-
-func sendRdTx() {
-	var nodes []dao.RDTxWaitingSend
-
-	if db == nil {
-		return
-	}
-
-	err := db.Select(q.Eq("IsEnable", true)).Find(&nodes)
-	if err != nil {
-		return
-	}
-
-	for _, node := range nodes {
-		if tool.CheckIsString(&node.TransactionHex) {
-			_, err = rpcClient.SendRawTransaction(node.TransactionHex)
-			if err == nil {
-				if node.Type == 1 {
-					_ = addHTRD1aTxToWaitDB(node.HtnxIdAndHtnxRdId)
-				}
-				_ = db.UpdateField(&node, "IsEnable", false)
-				_ = db.UpdateField(&node, "FinishAt", time.Now())
 			}
 		}
 	}
