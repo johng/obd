@@ -207,16 +207,9 @@ func (this *channelManager) BobAcceptChannel(msg bean.RequestMessage, user *bean
 		if existAddress == false {
 			channelInfo.ChannelAddress = gjson.Get(multiSig, "address").String()
 			channelInfo.ChannelAddressRedeemScript = gjson.Get(multiSig, "redeemScript").String()
-
-			addrInfoStr, err := rpcClient.GetAddressInfo(channelInfo.ChannelAddress)
-			if err != nil {
-				log.Println(err)
-				return nil, err
-			}
-			channelInfo.ChannelAddressScriptPubKey = gjson.Parse(addrInfoStr).Get("scriptPubKey").String()
+			channelInfo.ChannelAddressScriptPubKey = gjson.Get(multiSig, "scriptPubKey").String()
 			channelInfo.CurrState = dao.ChannelState_WaitFundAsset
 		} else {
-
 			return nil, errors.New(enum.Tips_channel_changePubkeyForChannel + reqData.FundingPubKey)
 		}
 	} else {
@@ -360,14 +353,17 @@ func (this *channelManager) AllItem(jsonData string, user bean.User) (data *page
 			item.PeerIdA = info.PeerIdA
 			item.PeerIdB = info.PeerIdB
 			item.CreateAt = info.CreateAt
-			result, err := rpcClient.ListReceivedByAddress(info.ChannelAddress)
-			if err == nil {
-				if len(gjson.Parse(result).Array()) > 0 {
-					btcFundingTimes := len(gjson.Parse(result).Array()[0].Get("txids").Array())
-					if btcFundingTimes > 3 {
-						btcFundingTimes = 3
+			item.BtcFundingTimes = 3
+			if item.CurrState == dao.ChannelState_Create {
+				result, err := rpcClient.ListReceivedByAddress(info.ChannelAddress)
+				if err == nil {
+					if len(gjson.Parse(result).Array()) > 0 {
+						btcFundingTimes := len(gjson.Parse(result).Array()[0].Get("txids").Array())
+						if btcFundingTimes > 3 {
+							btcFundingTimes = 3
+						}
+						item.BtcFundingTimes = btcFundingTimes
 					}
-					item.BtcFundingTimes = btcFundingTimes
 				}
 			}
 

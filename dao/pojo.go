@@ -59,6 +59,21 @@ type ChannelInfo struct {
 	CloseAt                    time.Time    `json:"close_at"`
 }
 
+type ChannelBtcListUnspent struct {
+	Id          int    `storm:"id,increment" json:"id"`
+	ChannelId   string `json:"channel_id"`
+	ListUnspent string `json:"list_unspent"`
+}
+
+type ChannelAddressListUnspent struct {
+	Id           int     `storm:"id,increment" json:"id"`
+	ChannelId    string  `json:"channel_id"`
+	Txid         string  `json:"txid"`
+	Vout         uint32  `json:"vout"`
+	ScriptPubKey string  `json:"scriptPubKey"`
+	Amount       float64 `json:"amount"`
+}
+
 type CloseChannel struct {
 	bean.CloseChannel
 	Id             int       `storm:"id,increment" json:"id"`
@@ -104,6 +119,7 @@ type FundingTransaction struct {
 type TxInfoState int
 
 const (
+	TxInfoState_Init                TxInfoState = 1
 	TxInfoState_Create              TxInfoState = 5
 	TxInfoState_Htlc_WaitHTRD1aSign TxInfoState = 6 //等待bob创建htrd1a
 	TxInfoState_CreateAndSign       TxInfoState = 10
@@ -134,6 +150,7 @@ type MinerFeeRedeemTransaction struct {
 	Owner              string    `json:"owner"`
 	TemporaryChannelId string    `json:"temporary_channel_id"`
 	FundingTxId        string    `json:"funding_tx_id"`
+	Amount             float64   `json:"amount"`
 	Hex                string    `json:"hex"`
 	Txid               string    `json:"txid"`
 	IsFinish           bool      `json:"is_finish"`
@@ -164,6 +181,7 @@ type CommitmentTransaction struct {
 	TxType CommitmentTransactionType `json:"tx_type"` // 0 rsmc 1 htlc
 
 	//RSMC
+	// 用于记录助记词导出地址的index
 	RSMCTempAddressIndex         int     `json:"rsmc_temp_address_index"`   //aliceTempRemc or bobTempRsmc
 	RSMCTempAddressPubKey        string  `json:"rsmc_temp_address_pub_key"` //aliceTempRemc or bobTempRsmc
 	RSMCMultiAddress             string  `json:"rsmc_multi_address"`        //output aliceTempRsmc&bob  or alice&bobTempRsmc  multiAddr
@@ -201,6 +219,14 @@ type CommitmentTransaction struct {
 	SendAt       time.Time   `json:"send_at"`
 	LastEditTime time.Time   `json:"last_edit_time"`
 	Owner        string      `json:"owner"`
+}
+
+type CommitmentTxRawTx struct {
+	Id                      int                       `storm:"id,increment" json:"id" `
+	CommitmentTxId          int                       `json:"commitment_tx_id"`
+	ToCounterpartyRawTxData bean.NeedClientSignTxData `json:"to_counterparty_raw_tx_data"`
+	RsmcRawTxData           bean.NeedClientSignTxData `json:"rsmc_raw_tx_data"`
+	HtlcRawTxData           bean.NeedClientSignTxData `json:"htlc_raw_tx_data"`
 }
 
 type PayeeRevokeAndAcknowledgeCommitment struct {
@@ -299,4 +325,10 @@ type AtomicSwapAcceptedInfo struct {
 	CreateBy     string    `json:"create_by"`
 	CreateAt     time.Time `json:"create_at"`
 	LatestEditAt time.Time `json:"latest_edit_at"`
+}
+
+type CacheDataForTx struct {
+	Id      int    `storm:"id,increment" json:"id" `
+	KeyName string `json:"key_name"`
+	Data    []byte `json:"data"`
 }

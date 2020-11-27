@@ -7,18 +7,16 @@ import (
 	"fmt"
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/config"
+	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
-
-	"github.com/tidwall/gjson"
 )
 
 var connConfig *ConnConfig
-var validatedAddress map[string]bool
 
 func init() {
 	connConfig = &ConnConfig{
@@ -26,9 +24,6 @@ func init() {
 		User: config.ChainNode_User,
 		Pass: config.ChainNode_Pass,
 	}
-
-	validatedAddress = make(map[string]bool)
-	//log.Println(connConfig)
 }
 
 type ConnConfig struct {
@@ -132,6 +127,7 @@ func (client *Client) CheckVersion() error {
 }
 
 func (client *Client) send(method string, params []interface{}) (result string, err error) {
+	log.Println(method)
 	rawParams := make([]json.RawMessage, 0, len(params))
 	for _, item := range params {
 		marshaledParam, err := json.Marshal(item)
@@ -196,4 +192,35 @@ func (client *Client) send(method string, params []interface{}) (result string, 
 		return "", err
 	}
 	return gjson.Parse(string(res)).String(), nil
+}
+
+func (client *Client) CheckMultiSign(sendedInput bool, hex string, step int) (pass bool, err error) {
+	if len(hex) == 0 {
+		return false, errors.New("Empty hex")
+	}
+	result, err := client.DecodeRawTransaction(hex)
+	vins := gjson.Get(result, "vin").Array()
+	for i := 0; i < len(vins); i++ {
+		asm := vins[i].Get("scriptSig").Get("asm").Str
+		asmArr := strings.Split(asm, " ")
+		if step == 1 {
+			if len(asmArr) != 4 || (asmArr[1] == "0" && asmArr[2] == "0") {
+				return false, errors.New("err sign")
+			}
+		}
+		if step == 2 {
+			if len(asmArr) != 4 || asmArr[1] == "0" || asmArr[2] == "0" {
+				return false, errors.New("err sign")
+			}
+		}
+	}
+	return true, nil
+}
+
+func (client *Client) GetTxId(hex string) string {
+	testResult, err := client.DecodeRawTransaction(hex)
+	if err == nil {
+		return gjson.Parse(testResult).Get("txid").Str
+	}
+	return ""
 }

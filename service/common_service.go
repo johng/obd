@@ -13,6 +13,7 @@ import (
 	"github.com/omnilaboratory/obd/tool"
 	"github.com/shopspring/decimal"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/asdine/storm"
@@ -34,30 +35,20 @@ func findUserIsOnline(nodePeerId, userPeerId string) error {
 	return errors.New(fmt.Sprintf(enum.Tips_user_notExistOrOnline, userPeerId))
 }
 
-func checkBtcFundFinish(address string, isFundOmni bool) error {
-	result, err := rpcClient.ListUnspent(address)
+func checkBtcFundFinish(tx storm.Node, channel dao.ChannelInfo, isFundOmni bool) error {
+	if channel.CurrState > dao.ChannelState_WaitFundAsset {
+		return nil
+	}
+
+	count, err := tx.Select(q.Eq("TemporaryChannelId", channel.TemporaryChannelId), q.Eq("IsFinish", true), q.Eq("Owner", channel.CreateBy)).Count(&dao.MinerFeeRedeemTransaction{})
 	if err != nil {
 		return err
 	}
-	array := gjson.Parse(result).Array()
-	log.Println("listunspent", array)
-	if len(array) < config.BtcNeedFundTimes {
+	//log.Println("listunspent", array)
+	if count < config.BtcNeedFundTimes {
 		return errors.New(enum.Tips_funding_notEnoughBtcFundingTime)
 	}
 
-	if isFundOmni {
-		out := GetBtcMinerFundMiniAmount()
-		count := 0
-		for _, item := range array {
-			amount := item.Get("amount").Float()
-			if amount >= out {
-				count++
-			}
-		}
-		if count < config.BtcNeedFundTimes {
-			return errors.New(fmt.Sprintf(enum.Tips_common_amountMustGreater, out))
-		}
-	}
 	return nil
 }
 
@@ -66,10 +57,6 @@ func getAddressFromPubKey(pubKey string) (address string, err error) {
 		return "", errors.New(enum.Tips_common_empty + "pubKey")
 	}
 	address, err = tool.GetAddressFromPubKey(pubKey)
-	if err != nil {
-		return "", err
-	}
-	_, err = rpcClient.ValidateAddress(address)
 	if err != nil {
 		return "", err
 	}
@@ -97,11 +84,7 @@ func createCommitmentTx(owner string, channelInfo *dao.ChannelInfo, fundingTrans
 	}
 	commitmentTxInfo.RSMCMultiAddress = gjson.Get(multiAddr, "address").String()
 	commitmentTxInfo.RSMCRedeemScript = gjson.Get(multiAddr, "redeemScript").String()
-	json, err := rpcClient.GetAddressInfo(commitmentTxInfo.RSMCMultiAddress)
-	if err != nil {
-		return nil, err
-	}
-	commitmentTxInfo.RSMCMultiAddressScriptPubKey = gjson.Get(json, "scriptPubKey").String()
+	commitmentTxInfo.RSMCMultiAddressScriptPubKey = gjson.Get(multiAddr, "scriptPubKey").String()
 
 	if tool.CheckIsString(&outputBean.HtlcTempPubKey) {
 		commitmentTxInfo.HTLCTempAddressPubKey = outputBean.HtlcTempPubKey
@@ -111,11 +94,7 @@ func createCommitmentTx(owner string, channelInfo *dao.ChannelInfo, fundingTrans
 		}
 		commitmentTxInfo.HTLCMultiAddress = gjson.Get(multiAddr, "address").String()
 		commitmentTxInfo.HTLCRedeemScript = gjson.Get(multiAddr, "redeemScript").String()
-		json, err := rpcClient.GetAddressInfo(commitmentTxInfo.HTLCMultiAddress)
-		if err != nil {
-			return nil, err
-		}
-		commitmentTxInfo.HTLCMultiAddressScriptPubKey = gjson.Get(json, "scriptPubKey").String()
+		commitmentTxInfo.HTLCMultiAddressScriptPubKey = gjson.Get(multiAddr, "scriptPubKey").String()
 	}
 
 	commitmentTxInfo.AmountToRSMC = outputBean.AmountToRsmc
@@ -195,7 +174,18 @@ func checkBtcTxHex(btcFeeTxHexDecode string, channelInfo *dao.ChannelInfo, peerI
 		log.Println(err)
 		return "", 0, 0, err
 	}
-	inTxid := jsonFundingTxHexDecode.Get("vin").Array()[0].Get("txid").String()
+
+	vin1 := jsonFundingTxHexDecode.Get("vin").Array()[0]
+	asm := vin1.Get("scriptSig").Get("asm").Str
+	if len(asm) == 0 {
+		return "", 0, 0, errors.New("wrong vin asm")
+	}
+	split := strings.Split(asm, " ")
+	if split[0] == "0" {
+		return "", 0, 0, errors.New(enum.Tips_funding_notFoundVin)
+	}
+
+	inTxid := vin1.Get("txid").String()
 	inputTx, err := rpcClient.GetTransactionById(inTxid)
 	if err != nil {
 		err = errors.New(enum.Tips_funding_wrongBtcHexVin + err.Error())
@@ -373,24 +363,11 @@ func getFundingTransactionByChannelId(dbTx storm.Node, channelId string, userPee
 	return fundingTransaction
 }
 
-func signRdTx(tx storm.Node, channelInfo *dao.ChannelInfo, signedRsmcHex string, rdHex string, latestCommitmentTxInfo *dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
+func saveRdTx(tx storm.Node, channelInfo *dao.ChannelInfo, signedRsmcHex string, signedRdHex string, latestCommitmentTxInfo *dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
 	inputs, err := getInputsForNextTxByParseTxHashVout(signedRsmcHex, latestCommitmentTxInfo.RSMCMultiAddress, latestCommitmentTxInfo.RSMCMultiAddressScriptPubKey, latestCommitmentTxInfo.RSMCRedeemScript)
 	if err != nil || len(inputs) == 0 {
 		log.Println(err)
 		return err
-	}
-	_, signedRdHex, err := rpcClient.OmniSignRawTransactionForUnsend(rdHex, inputs, tempAddrPrivateKeyMap[latestCommitmentTxInfo.RSMCTempAddressPubKey])
-	if err != nil {
-		return err
-	}
-	result, err := rpcClient.TestMemPoolAccept(signedRdHex)
-	if err != nil {
-		return err
-	}
-	if gjson.Parse(result).Array()[0].Get("allowed").Bool() == false {
-		if gjson.Parse(result).Array()[0].Get("reject-reason").String() != "missing-inputs" {
-			return errors.New(gjson.Parse(result).Array()[0].Get("reject-reason").String())
-		}
 	}
 
 	aliceRdTxid := checkHexOutputAddressFromOmniDecode(signedRdHex, inputs, outputAddress)
@@ -415,47 +392,34 @@ func signRdTx(tx storm.Node, channelInfo *dao.ChannelInfo, signedRsmcHex string,
 	return nil
 }
 
-func signHTD1bTx(tx storm.Node, signedHtlcHex string, htd1bHex string, latestCcommitmentTxInfo dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
-	inputs, err := getInputsForNextTxByParseTxHashVout(signedHtlcHex, latestCcommitmentTxInfo.HTLCMultiAddress, latestCcommitmentTxInfo.HTLCMultiAddressScriptPubKey, latestCcommitmentTxInfo.HTLCRedeemScript)
+func saveHTD1bTx(tx storm.Node, signedHtlcHex string, signedHtd1bHex string, latestCommitmentTxInfo dao.CommitmentTransaction, outputAddress string, user *bean.User) (err error) {
+	inputs, err := getInputsForNextTxByParseTxHashVout(signedHtlcHex, latestCommitmentTxInfo.HTLCMultiAddress, latestCommitmentTxInfo.HTLCMultiAddressScriptPubKey, latestCommitmentTxInfo.HTLCRedeemScript)
 	if err != nil || len(inputs) == 0 {
 		log.Println(err)
 		return err
 	}
-	signedHtd1bTxid, signedHtd1bHex, err := rpcClient.OmniSignRawTransactionForUnsend(htd1bHex, inputs, tempAddrPrivateKeyMap[latestCcommitmentTxInfo.HTLCTempAddressPubKey])
-	if err != nil {
-		return err
-	}
-	result, err := rpcClient.TestMemPoolAccept(signedHtd1bHex)
-	if err != nil {
-		return err
-	}
-	if gjson.Parse(result).Array()[0].Get("allowed").Bool() == false {
-		if gjson.Parse(result).Array()[0].Get("reject-reason").String() != "missing-inputs" {
-			return errors.New(gjson.Parse(result).Array()[0].Get("reject-reason").String())
-		}
+
+	owner := latestCommitmentTxInfo.PeerIdA
+	if user.PeerId == latestCommitmentTxInfo.PeerIdA {
+		owner = latestCommitmentTxInfo.PeerIdB
 	}
 
-	owner := latestCcommitmentTxInfo.PeerIdA
-	if user.PeerId == latestCcommitmentTxInfo.PeerIdA {
-		owner = latestCcommitmentTxInfo.PeerIdB
-	}
-
-	htlcTimeOut := latestCcommitmentTxInfo.HtlcCltvExpiry
+	htlcTimeOut := latestCommitmentTxInfo.HtlcCltvExpiry
 	htlcTimeoutDeliveryTx := &dao.HTLCTimeoutDeliveryTxB{}
-	htlcTimeoutDeliveryTx.ChannelId = latestCcommitmentTxInfo.ChannelId
-	htlcTimeoutDeliveryTx.CommitmentTxId = latestCcommitmentTxInfo.Id
-	htlcTimeoutDeliveryTx.PropertyId = latestCcommitmentTxInfo.PropertyId
+	htlcTimeoutDeliveryTx.ChannelId = latestCommitmentTxInfo.ChannelId
+	htlcTimeoutDeliveryTx.CommitmentTxId = latestCommitmentTxInfo.Id
+	htlcTimeoutDeliveryTx.PropertyId = latestCommitmentTxInfo.PropertyId
 	htlcTimeoutDeliveryTx.OutputAddress = outputAddress
-	htlcTimeoutDeliveryTx.InputTxid = latestCcommitmentTxInfo.HTLCTxid
-	htlcTimeoutDeliveryTx.InputHex = latestCcommitmentTxInfo.HtlcTxHex
-	htlcTimeoutDeliveryTx.OutAmount = latestCcommitmentTxInfo.AmountToHtlc
+	htlcTimeoutDeliveryTx.InputTxid = latestCommitmentTxInfo.HTLCTxid
+	htlcTimeoutDeliveryTx.InputHex = latestCommitmentTxInfo.HtlcTxHex
+	htlcTimeoutDeliveryTx.OutAmount = latestCommitmentTxInfo.AmountToHtlc
 	htlcTimeoutDeliveryTx.Owner = owner
 	htlcTimeoutDeliveryTx.CurrState = dao.TxInfoState_CreateAndSign
 	htlcTimeoutDeliveryTx.CreateBy = user.PeerId
 	htlcTimeoutDeliveryTx.Timeout = htlcTimeOut
 	htlcTimeoutDeliveryTx.CreateAt = time.Now()
 
-	htlcTimeoutDeliveryTx.Txid = signedHtd1bTxid
+	htlcTimeoutDeliveryTx.Txid = rpcClient.GetTxId(signedHtd1bHex)
 	htlcTimeoutDeliveryTx.TxHex = signedHtd1bHex
 	err = tx.Save(htlcTimeoutDeliveryTx)
 	if err != nil {
@@ -472,22 +436,18 @@ func createMultiSig(pubkey1 string, pubkey2 string) (multiAddress, redeemScript,
 	}
 	multiAddress = gjson.Get(aliceRsmcMultiAddr, "address").String()
 	redeemScript = gjson.Get(aliceRsmcMultiAddr, "redeemScript").String()
-	tempJson, err := rpcClient.GetAddressInfo(multiAddress)
-	if err != nil {
-		return "", "", "", err
-	}
-	scriptPubKey = gjson.Get(tempJson, "scriptPubKey").String()
+	scriptPubKey = gjson.Get(aliceRsmcMultiAddr, "scriptPubKey").String()
 	return multiAddress, redeemScript, scriptPubKey, nil
 }
 
-func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.SendRequestCommitmentTx, channelInfo *dao.ChannelInfo, lastCommitmentTx *dao.CommitmentTransaction, currUser bean.User) (commitmentTxInfo *dao.CommitmentTransaction, err error) {
+func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.RequestCreateCommitmentTx, channelInfo *dao.ChannelInfo, lastCommitmentTx *dao.CommitmentTransaction, currUser bean.User) (commitmentTxInfo *dao.CommitmentTransaction, rawTx dao.CommitmentTxRawTx, err error) {
 	//1、转账给bob的交易：输入：通道其中一个input，输出：给bob
 	//2、转账后的余额的交易：输入：通道总的一个input,输出：一个多签地址，这个钱又需要后续的RD才能赎回
 	// create Cna tx
 	fundingTransaction := getFundingTransactionByChannelId(dbTx, channelInfo.ChannelId, currUser.PeerId)
 	if fundingTransaction == nil {
 		err = errors.New(enum.Tips_funding_notFoundFundAssetTx)
-		return nil, err
+		return nil, rawTx, err
 	}
 
 	var outputBean = commitmentTxOutputBean{}
@@ -531,23 +491,26 @@ func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.SendReq
 			}
 		}
 	}
-
 	commitmentTxInfo, err = createCommitmentTx(currUser.PeerId, channelInfo, fundingTransaction, outputBean, &currUser)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, rawTx, err
 	}
+
+	listUnspent, err := GetAddressListUnspent(dbTx, *channelInfo)
+	if err != nil {
+		return nil, rawTx, err
+	}
+
 	commitmentTxInfo.TxType = dao.CommitmentTransactionType_Rsmc
 	commitmentTxInfo.RSMCTempAddressIndex = reqData.CurrTempAddressIndex
-
+	rawTx = dao.CommitmentTxRawTx{}
 	usedTxidTemp := ""
 	if commitmentTxInfo.AmountToRSMC > 0 {
-		txid, hex, usedTxid, err := rpcClient.OmniCreateAndSignRawTransactionUseSingleInput(
+		rsmcTxData, usedTxid, err := rpcClient.OmniCreateRawTransactionUseSingleInput(
 			int(commitmentTxInfo.TxType),
+			listUnspent,
 			channelInfo.ChannelAddress,
-			[]string{
-				reqData.ChannelAddressPrivateKey,
-			},
 			commitmentTxInfo.RSMCMultiAddress,
 			fundingTransaction.PropertyId,
 			commitmentTxInfo.AmountToRSMC,
@@ -555,38 +518,49 @@ func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.SendReq
 			0, &channelInfo.ChannelAddressRedeemScript, "")
 		if err != nil {
 			log.Println(err)
-			return nil, err
+			return nil, rawTx, err
 		}
 
 		usedTxidTemp = usedTxid
 		commitmentTxInfo.RsmcInputTxid = usedTxid
-		commitmentTxInfo.RSMCTxid = txid
-		commitmentTxInfo.RSMCTxHex = hex
+		commitmentTxInfo.RSMCTxHex = rsmcTxData["hex"].(string)
+
+		signHexData := bean.NeedClientSignTxData{}
+		signHexData.Hex = commitmentTxInfo.RSMCTxHex
+		signHexData.Inputs = rsmcTxData["inputs"]
+		signHexData.IsMultisig = true
+		signHexData.PubKeyA = channelInfo.PubKeyA
+		signHexData.PubKeyB = channelInfo.PubKeyB
+		rawTx.RsmcRawTxData = signHexData
 	}
 
-	//create to other tx
+	//create to Counterparty tx
 	if commitmentTxInfo.AmountToCounterparty > 0 {
-		txid, hex, err := rpcClient.OmniCreateAndSignRawTransactionUseRestInput(
+		toBobTxData, err := rpcClient.OmniCreateRawTransactionUseRestInput(
 			int(commitmentTxInfo.TxType),
+			listUnspent,
 			channelInfo.ChannelAddress,
 			usedTxidTemp,
-			[]string{
-				reqData.ChannelAddressPrivateKey,
-			},
 			outputBean.OppositeSideChannelAddress,
 			fundingTransaction.FunderAddress,
 			fundingTransaction.PropertyId,
 			commitmentTxInfo.AmountToCounterparty,
 			getBtcMinerAmount(channelInfo.BtcAmount),
-			0, &channelInfo.ChannelAddressRedeemScript)
+			&channelInfo.ChannelAddressRedeemScript)
 		if err != nil {
 			log.Println(err)
-			return nil, err
+			return nil, rawTx, err
 		}
-		commitmentTxInfo.ToCounterpartyTxid = txid
-		commitmentTxInfo.ToCounterpartyTxHex = hex
-	}
+		commitmentTxInfo.ToCounterpartyTxHex = toBobTxData["hex"].(string)
 
+		signHexData := bean.NeedClientSignTxData{}
+		signHexData.Hex = commitmentTxInfo.ToCounterpartyTxHex
+		signHexData.Inputs = toBobTxData["inputs"]
+		signHexData.IsMultisig = true
+		signHexData.PubKeyA = channelInfo.PubKeyA
+		signHexData.PubKeyB = channelInfo.PubKeyB
+		rawTx.ToCounterpartyRawTxData = signHexData
+	}
 	commitmentTxInfo.LastHash = ""
 	commitmentTxInfo.CurrHash = ""
 	if lastCommitmentTx != nil && lastCommitmentTx.Id > 0 {
@@ -597,8 +571,11 @@ func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.SendReq
 	err = dbTx.Save(commitmentTxInfo)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, rawTx, err
 	}
+
+	rawTx.CommitmentTxId = commitmentTxInfo.Id
+	_ = dbTx.Save(rawTx)
 
 	bytes, err := json.Marshal(commitmentTxInfo)
 	msgHash := tool.SignMsgWithSha256(bytes)
@@ -606,9 +583,9 @@ func createCommitmentTxHex(dbTx storm.Node, isSender bool, reqData *bean.SendReq
 	err = dbTx.Update(commitmentTxInfo)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, rawTx, err
 	}
-	return commitmentTxInfo, nil
+	return commitmentTxInfo, rawTx, nil
 }
 
 func GetBtcMinerFundMiniAmount() float64 {
@@ -620,14 +597,73 @@ func getBtcMinerAmount(total float64) float64 {
 	return rpc.GetBtcMinerAmount(total)
 }
 
-func checkChannelOmniAssetAmount(channelInfo dao.ChannelInfo) bool {
+func checkChannelOmniAssetAmount(channelInfo dao.ChannelInfo) (bool, error) {
 	result, err := rpcClient.OmniGetbalance(channelInfo.ChannelAddress, int(channelInfo.PropertyId))
 	if err != nil {
-		return false
+		log.Println(result)
+		return false, err
 	}
 	balance := gjson.Get(result, "balance").Float()
 	if balance == channelInfo.Amount {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
+}
+
+func GetAddressListUnspent(tx storm.Node, channelInfo dao.ChannelInfo) (listUnspentResult string, err error) {
+	listUnspentArr := []dao.ChannelAddressListUnspent{}
+	tx.Select(q.Eq("ChannelId", channelInfo.ChannelId)).Find(&listUnspentArr)
+	if len(listUnspentArr) < 4 {
+		btcRequestArr := []dao.FundingBtcRequest{}
+		_ = tx.Select(q.Eq("TemporaryChannelId", channelInfo.TemporaryChannelId), q.Eq("IsFinish", true)).Find(&btcRequestArr)
+		if len(btcRequestArr) != 3 {
+			return "", errors.New("error btc fund")
+		}
+		for _, item := range btcRequestArr {
+			outputFromHex := getOutputFromHex(item.TxHash, channelInfo.ChannelAddress)
+			outputFromHex.ChannelId = channelInfo.ChannelId
+			tx.Save(outputFromHex)
+		}
+		omniRequestArr := []dao.FundingTransaction{}
+		_ = tx.Select(q.Eq("TemporaryChannelId", channelInfo.TemporaryChannelId)).Find(&omniRequestArr)
+		if len(omniRequestArr) != 1 {
+			return "", errors.New("error omni fund")
+		}
+		for _, item := range omniRequestArr {
+			outputFromHex := getOutputFromHex(item.FundingTxHex, channelInfo.ChannelAddress)
+			outputFromHex.ChannelId = channelInfo.ChannelId
+			tx.Save(outputFromHex)
+		}
+		tx.Select(q.Eq("ChannelId", channelInfo.ChannelId)).Find(&listUnspentArr)
+	}
+	marshal, _ := json.Marshal(&listUnspentArr)
+	return string(marshal), nil
+}
+
+func getOutputFromHex(hex string, toAddress string) *dao.ChannelAddressListUnspent {
+	result, err := rpcClient.DecodeRawTransaction(hex)
+	if err != nil {
+		return nil
+	}
+	jsonHex := gjson.Parse(result)
+	if jsonHex.Get("vout").IsArray() {
+		for _, item := range jsonHex.Get("vout").Array() {
+			if item.Get("scriptPubKey").Get("addresses").Exists() {
+				addresses := item.Get("scriptPubKey").Get("addresses").Array()
+				for _, address := range addresses {
+					if address.String() == toAddress {
+						if item.Get("value").Float() > 0 {
+							node := &dao.ChannelAddressListUnspent{}
+							node.Txid = jsonHex.Get("txid").String()
+							node.ScriptPubKey = item.Get("scriptPubKey").Get("hex").Str
+							node.Vout = uint32(item.Get("n").Uint())
+							node.Amount = item.Get("value").Float()
+							return node
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
 }

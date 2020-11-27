@@ -33,6 +33,16 @@ func CheckIsString(str *string) bool {
 	}
 	return true
 }
+func CheckIsAddress(address string) bool {
+	if CheckIsString(&address) == false {
+		return false
+	}
+	_, err := btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	if err != nil {
+		return false
+	}
+	return true
+}
 
 func VerifyEmailFormat(email string) bool {
 	isString := CheckIsString(&email)
@@ -94,7 +104,6 @@ func GetAddressFromPubKey(pubKey string) (address string, err error) {
 	}
 	netAddr.SetFormat(btcutil.PKFCompressed)
 	address = netAddr.EncodeAddress()
-	log.Println("BitCoin Address:", address)
 
 	return address, nil
 }
@@ -184,4 +193,18 @@ func GetObdNodeId() string {
 func GetTrackerNodeId() string {
 	source := GetMacAddrs() + ":" + strconv.Itoa(config.TrackerServerPort)
 	return SignMsgWithSha256([]byte(source))
+}
+
+func GetCoreNet() *chaincfg.Params {
+	net := &chaincfg.MainNetParams
+	if strings.Contains(config.ChainNode_Type, "main") {
+		net = &chaincfg.MainNetParams
+	}
+	if strings.Contains(config.ChainNode_Type, "test") {
+		net = &chaincfg.TestNet3Params
+	}
+	if strings.Contains(config.ChainNode_Type, "reg") {
+		net = &chaincfg.RegressionNetParams
+	}
+	return net
 }
