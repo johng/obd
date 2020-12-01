@@ -289,7 +289,7 @@ func createOmniRawTransaction(balance, out, amount, minerFee float64, propertyId
 		return nil, errors.New("not enough balance")
 	}
 
-	payloadBytes, payloadHex := omnicore.Omni_createpayload_simplesend(strconv.Itoa(int(propertyId)), tool.FloatToString(amount, 8), true)
+	payloadBytes, payloadHex := omnicore.Omni_createpayload_simplesend(strconv.Itoa(int(propertyId)), tool.FloatToString(amount, 8), false)
 
 	inputsBytes, _ := json.Marshal(inputs)
 	inputsStr := string(inputsBytes)
