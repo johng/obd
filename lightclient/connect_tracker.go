@@ -2,21 +2,19 @@ package lightclient
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/asdine/storm"
 	"github.com/asdine/storm/q"
 	"github.com/gorilla/websocket"
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/config"
+	"github.com/omnilaboratory/obd/conn"
 	"github.com/omnilaboratory/obd/dao"
 	"github.com/omnilaboratory/obd/service"
 	"github.com/omnilaboratory/obd/tool"
 	trackerBean "github.com/omnilaboratory/obd/tracker/bean"
-	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -33,20 +31,22 @@ func ConnectToTracker() (err error) {
 
 	conn, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		log.Println("error ================ fail to dial tracker:", err)
+		log.Println("fail to dial tracker:", err)
 		return err
 	}
+
+	result, err := conn2tracker.GetChainNodeType()
+	if err != nil {
+		return err
+	}
+	config.ChainNodeType = result
+
 	if service.TrackerChan == nil {
 		service.TrackerChan = make(chan []byte)
 	}
 
-	nodeId := httpCheckChainTypeByTracker()
-	if nodeId == 0 {
-		return errors.New("fail to login tracker")
-	}
 	if isReset {
-		updateP2pAddressLogin()
-		go goroutine()
+		go readDataFromWs()
 	}
 
 	if ticker3m == nil {
@@ -57,7 +57,7 @@ func ConnectToTracker() (err error) {
 
 var isReset = true
 
-func goroutine() {
+func readDataFromWs() {
 	isReset = false
 	ticker := time.NewTicker(time.Minute * 2)
 	defer ticker.Stop()
@@ -87,7 +87,6 @@ func goroutine() {
 				conn = nil
 				return
 			}
-			//log.Println("recv from tracker: " + string(message))
 
 			replyMessage := bean.ReplyMessage{}
 			err = json.Unmarshal(message, &replyMessage)
@@ -105,6 +104,9 @@ func goroutine() {
 						//requestMessage.Data = dataMap["h"].(string) + "_" + dataMap["path"].(string)
 					}
 					htlcTrackerDealModule(requestMessage)
+				case enum.MsgType_Tracker_Connect_301:
+					config.ChainNodeType = replyMessage.Result.(string)
+					go SynData()
 				}
 			}
 		}
@@ -122,6 +124,9 @@ func goroutine() {
 				err = conn.WriteMessage(websocket.TextMessage, bytes)
 				if err != nil {
 					log.Println("HeartBeat:", err)
+					isReset = true
+					log.Println("socket to tracker get err:", err)
+					conn = nil
 					return
 				}
 			} else {
@@ -132,24 +137,10 @@ func goroutine() {
 }
 
 func SynData() {
+	log.Println("synData to tracker")
 	updateP2pAddressLogin()
 	sycUserInfos()
 	sycChannelInfos()
-}
-
-func httpCheckChainTypeByTracker() (nodeId int) {
-	bean.CurrObdNodeInfo.TrackerNodeId = tool.GetObdNodeId()
-	url := "http://" + config.TrackerHost + "/api/v1/checkChainType?nodeId=" + tool.GetObdNodeId() + "&chainType=" + config.ChainNode_Type
-	resp, err := http.Get(url)
-	if err != nil {
-		return 0
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 200 {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return int(gjson.Get(string(body), "data").Get("id").Int())
-	}
-	return 0
 }
 
 func updateP2pAddressLogin() {
@@ -176,11 +167,11 @@ func sycUserInfos() {
 		nodes = append(nodes, user)
 	}
 	if len(nodes) > 0 {
-		log.Println("syn channel data to tracker", nodes)
+		log.Println("syn UserInfo data to tracker", nodes)
 		info := make(map[string]interface{})
 		info["type"] = enum.MsgType_Tracker_UpdateUserInfo_353
 		info["data"] = nodes
-		bytes, err := json.Marshal(info)
+		bytes, err := json.Marshal(&info)
 		if err == nil {
 			sendMsgToTracker(bytes)
 		}
@@ -189,7 +180,7 @@ func sycUserInfos() {
 
 //同步通道信息
 func sycChannelInfos() {
-	_dir := "dbdata" + config.ChainNode_Type
+	_dir := "dbdata" + config.ChainNodeType
 	files, _ := ioutil.ReadDir(_dir)
 
 	dbNames := make([]string, 0)
@@ -346,7 +337,7 @@ func startSchedule() {
 	}()
 
 	go func() {
-		ticker3m = time.NewTicker(3 * time.Minute)
+		ticker3m = time.NewTicker(1 * time.Minute)
 		defer ticker3m.Stop()
 		for {
 			select {

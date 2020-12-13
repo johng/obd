@@ -8,7 +8,7 @@ import (
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/dao"
-	"github.com/omnilaboratory/obd/rpc"
+	"github.com/omnilaboratory/obd/omnicore"
 	"github.com/omnilaboratory/obd/tool"
 	"github.com/tidwall/gjson"
 	"log"
@@ -32,6 +32,8 @@ var HtlcCloseTxService htlcCloseTxManager
 
 // step1 Alice 100049 请求关闭htlc交易 -100049 request close htlc
 func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, user bean.User) (data interface{}, needSign bool, err error) {
+	log.Println("htlc close step 1 begin", time.Now())
+
 	if tool.CheckIsString(&msg.Data) == false {
 		return nil, false, errors.New(enum.Tips_common_empty + "msg data")
 	}
@@ -132,11 +134,11 @@ func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, use
 
 	ht1aOrHe1b := dao.HTLCTimeoutTxForAAndExecutionForB{}
 	if latestCommitmentTxInfo.TxType == dao.CommitmentTransactionType_Htlc {
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, latestCommitmentTxInfo.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, latestCommitmentTxInfo.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, false, err
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, latestCommitmentTxInfo.HTLCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, latestCommitmentTxInfo.HTLCTempAddressPubKey)
 		if err != nil {
 			return nil, false, err
 		}
@@ -163,11 +165,11 @@ func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, use
 			log.Println(err)
 			return nil, false, err
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, lastCommitmentTxInfo.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, lastCommitmentTxInfo.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, false, err
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, lastCommitmentTxInfo.HTLCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, lastCommitmentTxInfo.HTLCTempAddressPubKey)
 		if err != nil {
 			return nil, false, err
 		}
@@ -188,7 +190,7 @@ func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, use
 
 	dataTo49P := bean.AliceRequestCloseHtlcCurrTxOfP2p{}
 	if ht1aOrHe1b.Id > 0 {
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressForHtnxPrivateKey, ht1aOrHe1b.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressForHtnxPrivateKey, ht1aOrHe1b.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, false, err
 		}
@@ -249,6 +251,8 @@ func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, use
 			service.tempDataSendTo49PAtAliceSide = make(map[string]bean.AliceRequestCloseHtlcCurrTxOfP2p)
 		}
 		service.tempDataSendTo49PAtAliceSide[user.PeerId+"_"+dataTo49P.ChannelId] = dataTo49P
+
+		log.Println("htlc close step 1 end", time.Now())
 		return retSignData, true, nil
 	}
 
@@ -257,6 +261,7 @@ func (service *htlcCloseTxManager) RequestCloseHtlc(msg bean.RequestMessage, use
 
 // step2 Alice 100100 Alice签名Cxa 并推送49号协议
 func (service *htlcCloseTxManager) OnAliceSignedCxa(msg bean.RequestMessage, user bean.User) (toALice, toBob interface{}, err error) {
+	log.Println("htlc close step 2 begin", time.Now())
 	if tool.CheckIsString(&msg.Data) == false {
 		err = errors.New(enum.Tips_common_empty + "msg.data")
 		log.Println(err)
@@ -277,7 +282,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxa(msg bean.RequestMessage, use
 	}
 
 	if tool.CheckIsString(&signedData.RsmcPartialSignedHex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, signedData.RsmcPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.RsmcPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "rsmc_partial_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -285,7 +290,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxa(msg bean.RequestMessage, use
 	}
 
 	if tool.CheckIsString(&signedData.CounterpartyPartialSignedHex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, signedData.CounterpartyPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.CounterpartyPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "counterparty_partial_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -307,13 +312,13 @@ func (service *htlcCloseTxManager) OnAliceSignedCxa(msg bean.RequestMessage, use
 	if len(latestCommitmentTxInfo.RSMCTxHex) > 0 {
 		//封装好的签名数据，给bob的客户端签名使用
 		latestCommitmentTxInfo.RSMCTxHex = signedData.CounterpartyPartialSignedHex
-		latestCommitmentTxInfo.RSMCTxid = rpcClient.GetTxId(signedData.CounterpartyPartialSignedHex)
+		latestCommitmentTxInfo.RSMCTxid = omnicore.GetTxId(signedData.CounterpartyPartialSignedHex)
 	}
 
 	if len(latestCommitmentTxInfo.ToCounterpartyTxHex) > 0 {
 		//封装好的签名数据，给bob的客户端签名使用
 		latestCommitmentTxInfo.ToCounterpartyTxHex = signedData.CounterpartyPartialSignedHex
-		latestCommitmentTxInfo.ToCounterpartyTxid = rpcClient.GetTxId(signedData.CounterpartyPartialSignedHex)
+		latestCommitmentTxInfo.ToCounterpartyTxid = omnicore.GetTxId(signedData.CounterpartyPartialSignedHex)
 	}
 
 	p2pData.RsmcPartialSignedData.Hex = signedData.RsmcPartialSignedHex
@@ -329,11 +334,13 @@ func (service *htlcCloseTxManager) OnAliceSignedCxa(msg bean.RequestMessage, use
 	toAliceResult.CurrTempAddressPubKey = p2pData.CurrTempAddressPubKey
 	toAliceResult.CommitmentTxHash = p2pData.CommitmentTxHash
 	toAliceResult.Amount = latestCommitmentTxInfo.AmountToHtlc
+	log.Println("htlc close step 2 end", time.Now())
 	return toAliceResult, p2pData, nil
 }
 
 //step3 obd 110049 推送p2p消息给bob
 func (service *htlcCloseTxManager) OnObdOfBobGet49PData(data string, user bean.User) (toBob interface{}, err error) {
+	log.Println("htlc close step 3 begin", time.Now())
 	closeHtlcTxOfP2p := bean.AliceRequestCloseHtlcCurrTxOfP2p{}
 	_ = json.Unmarshal([]byte(data), &closeHtlcTxOfP2p)
 
@@ -375,12 +382,13 @@ func (service *htlcCloseTxManager) OnObdOfBobGet49PData(data string, user bean.U
 	closeHtlcTxOfWs.MsgHash = messageHash
 	closeHtlcTxOfWs.SenderNodeAddress = closeHtlcTxOfP2p.SenderNodeAddress
 	closeHtlcTxOfWs.SenderPeerId = closeHtlcTxOfP2p.SenderPeerId
-
+	log.Println("htlc close step 3 end", time.Now())
 	return closeHtlcTxOfWs, nil
 }
 
 // step4 bob 100050 响应bob对这次关闭htlc交易的签收及他对Cxa的签名
 func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMessage, user bean.User) (toBob interface{}, err error) {
+	log.Println("htlc close step 4 begin", time.Now())
 	if tool.CheckIsString(&msg.Data) == false {
 		return nil, errors.New(enum.Tips_common_empty + "msg data")
 	}
@@ -485,11 +493,11 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 
 	he1b := dao.HTLCTimeoutTxForAAndExecutionForB{}
 	if latestCommitmentTxInfo.TxType == dao.CommitmentTransactionType_Htlc {
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, latestCommitmentTxInfo.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, latestCommitmentTxInfo.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf(enum.Tips_rsmc_wrongPrivateKeyForLast, reqData.LastRsmcTempAddressPrivateKey, latestCommitmentTxInfo.RSMCTempAddressPubKey))
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, latestCommitmentTxInfo.HTLCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, latestCommitmentTxInfo.HTLCTempAddressPubKey)
 		if err != nil {
 			return nil, err
 		}
@@ -513,11 +521,11 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 		if err != nil {
 			return nil, err
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, lastCommitTxInfo.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastRsmcTempAddressPrivateKey, lastCommitTxInfo.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, err
 		}
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, lastCommitTxInfo.HTLCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressPrivateKey, lastCommitTxInfo.HTLCTempAddressPubKey)
 		if err != nil {
 			return nil, err
 		}
@@ -542,7 +550,7 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 
 	dataSendTo50P := bean.CloseeSignCloseHtlcTxOfP2p{}
 	if he1b.Id > 0 {
-		_, err = tool.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressForHtnxPrivateKey, he1b.RSMCTempAddressPubKey)
+		_, err = omnicore.GetPubKeyFromWifAndCheck(reqData.LastHtlcTempAddressForHtnxPrivateKey, he1b.RSMCTempAddressPubKey)
 		if err != nil {
 			return nil, err
 		}
@@ -567,13 +575,13 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 	// 签名对方传过来的rsmcHex
 	var signedRsmcHex, aliceRsmcTxId string
 	var aliceRsmcMultiAddress, aliceRsmcRedeemScript, aliceRsmcMultiAddressScriptPubKey string
-	var aliceRsmcOutputs []rpc.TransactionInputItem
+	var aliceRsmcOutputs []bean.TransactionInputItem
 	if tool.CheckIsString(&dataFrom49POfP2p.RsmcPartialSignedData.Hex) {
 		signedRsmcHex = reqData.C4aRsmcCompleteSignedHex
-		if pass, _ := rpcClient.CheckMultiSign(true, signedRsmcHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedRsmcHex, 2); pass == false {
 			return nil, errors.New(fmt.Sprintf(enum.Tips_common_failToSign, "c4a_rsmc_complete_signed_hex"))
 		}
-		aliceRsmcTxId = rpcClient.GetTxId(signedRsmcHex)
+		aliceRsmcTxId = omnicore.GetTxId(signedRsmcHex)
 
 		//  根据alice的临时地址+bob的通道address,获取alice2+bob的多签地址，并得到AliceSignedRsmcHex签名后的交易的input，为创建alice的RD和bob的BR做准备
 		aliceRsmcMultiAddress, aliceRsmcRedeemScript, aliceRsmcMultiAddressScriptPubKey, err = createMultiSig(dataFrom49POfP2p.CurrTempAddressPubKey, signerPubKey)
@@ -592,7 +600,7 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 	//  签名对方传过来的toOtherHex
 	if tool.CheckIsString(&dataFrom49POfP2p.CounterpartyPartialSignedData.Hex) {
 		signedToOtherHex := reqData.C4aCounterpartyCompleteSignedHex
-		if pass, _ := rpcClient.CheckMultiSign(true, signedToOtherHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedToOtherHex, 2); pass == false {
 			return nil, errors.New(fmt.Sprintf(enum.Tips_common_failToSign, "c4a_counterparty_complete_signed_hex"))
 		}
 		dataSendTo50P.C4aCounterpartyCompleteSignedHex = signedToOtherHex
@@ -689,7 +697,7 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 		if user.PeerId == channelInfo.PeerIdA {
 			outputAddress = channelInfo.AddressB
 		}
-		senderRdTx, err := rpcClient.OmniCreateRawTransactionUseUnsendInput(
+		senderRdTx, err := omnicore.OmniCreateRawTransactionUseUnsendInput(
 			aliceRsmcMultiAddress,
 			aliceRsmcOutputs,
 			outputAddress,
@@ -732,12 +740,13 @@ func (service *htlcCloseTxManager) OnBobSignCloseHtlcRequest(msg bean.RequestMes
 
 	dataSendToBob.C4bRsmcRawData = dataSendTo50P.C4bRsmcPartialSignedData
 	dataSendToBob.C4bCounterpartyRawData = dataSendTo50P.C4bCounterpartyPartialSignedData
-
+	log.Println("htlc close step 4 end", time.Now())
 	return dataSendToBob, nil
 }
 
 // step5 bob 100111 响应bob对Cxb的签名，并推送50号协议
 func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user bean.User) (toAlice, toBob interface{}, err error) {
+	log.Println("htlc close step 5 begin", time.Now())
 	if tool.CheckIsString(&msg.Data) == false {
 		err = errors.New(enum.Tips_common_empty + "msg.data")
 		log.Println(err)
@@ -760,7 +769,7 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 	}
 
 	if tool.CheckIsString(&p2pData.C4bRsmcPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, signedData.C4bRsmcPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.C4bRsmcPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c4b_rsmc_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -768,7 +777,7 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 	}
 
 	if tool.CheckIsString(&p2pData.C4bCounterpartyPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, signedData.C4bCounterpartyPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.C4bCounterpartyPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c2b_counterparty_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -776,7 +785,7 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 	}
 
 	if tool.CheckIsString(&p2pData.C4aRdPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(false, signedData.C4aRdPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.C4aRdPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c4a_rd_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -784,7 +793,7 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 	}
 
 	if tool.CheckIsString(&signedData.C4aBrPartialSignedHex) {
-		if pass, _ := rpcClient.CheckMultiSign(false, signedData.C4aBrPartialSignedHex, 1); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedData.C4aBrPartialSignedHex, 1); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "c2a_br_signed_hex")
 			log.Println(err)
 			return nil, nil, err
@@ -819,12 +828,12 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 
 	if len(signedData.C4bRsmcPartialSignedHex) > 0 {
 		latestCommitmentTxInfo.RSMCTxHex = signedData.C4bRsmcPartialSignedHex
-		latestCommitmentTxInfo.RSMCTxid = rpcClient.GetTxId(signedData.C4bRsmcPartialSignedHex)
+		latestCommitmentTxInfo.RSMCTxid = omnicore.GetTxId(signedData.C4bRsmcPartialSignedHex)
 	}
 
 	if len(signedData.C4bCounterpartyPartialSignedHex) > 0 {
 		latestCommitmentTxInfo.ToCounterpartyTxHex = signedData.C4bCounterpartyPartialSignedHex
-		latestCommitmentTxInfo.ToCounterpartyTxid = rpcClient.GetTxId(signedData.C4bCounterpartyPartialSignedHex)
+		latestCommitmentTxInfo.ToCounterpartyTxid = omnicore.GetTxId(signedData.C4bCounterpartyPartialSignedHex)
 	}
 
 	if len(signedData.C4aBrPartialSignedHex) > 0 {
@@ -844,11 +853,13 @@ func (service *htlcCloseTxManager) OnBobSignedCxb(msg bean.RequestMessage, user 
 	toBobData := bean.BobSignedRsmcDataForC4bResult{}
 	toBobData.ChannelId = p2pData.ChannelId
 	toBobData.CommitmentTxHash = latestCommitmentTxInfo.CurrHash
+	log.Println("htlc close step 5 end", time.Now())
 	return p2pData, toBobData, nil
 }
 
 // step6 obd 110050 推送p2p消息给Alice
 func (service *htlcCloseTxManager) OnObdOfAliceGet50PData(data string, user bean.User) (toAlice interface{}, needNoticeBob bool, err error) {
+	log.Println("htlc close step 6 begin", time.Now())
 	dataFrom50P := bean.CloseeSignCloseHtlcTxOfP2p{}
 	_ = json.Unmarshal([]byte(data), &dataFrom50P)
 
@@ -892,12 +903,13 @@ func (service *htlcCloseTxManager) OnObdOfAliceGet50PData(data string, user bean
 	needAliceSignData.C4bCounterpartyPartialSignedData = dataFrom50P.C4bCounterpartyPartialSignedData
 	needAliceSignData.SendeeNodeAddress = dataFrom50P.SendeeNodeAddress
 	needAliceSignData.SendeePeerId = dataFrom50P.SendeePeerId
+	log.Println("htlc close step 6 end", time.Now())
 	return needAliceSignData, false, nil
 }
 
 // step7 alice 100112 Alice完成对Cxb的签名
 func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, user bean.User) (toAlice interface{}, err error) {
-
+	log.Println("htlc close step 7 begin", time.Now())
 	aliceSignedData := bean.AliceSignedRsmcTxForC4b{}
 	_ = json.Unmarshal([]byte(msg.Data), &aliceSignedData)
 
@@ -907,7 +919,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 	}
 
 	if tool.CheckIsString(&dataFromP2p50P.C4bRsmcPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, aliceSignedData.C4bRsmcCompleteSignedHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(aliceSignedData.C4bRsmcCompleteSignedHex, 2); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c4b_rsmc_complete_signed_hex")
 			log.Println(err)
 			return nil, err
@@ -916,7 +928,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 	dataFromP2p50P.C4bRsmcPartialSignedData.Hex = aliceSignedData.C4bRsmcCompleteSignedHex
 
 	if tool.CheckIsString(&dataFromP2p50P.C4bCounterpartyPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, aliceSignedData.C4bCounterpartyCompleteSignedHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(aliceSignedData.C4bCounterpartyCompleteSignedHex, 2); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed C4bCounterpartyCompleteSignedHex")
 			log.Println(err)
 			return nil, err
@@ -925,7 +937,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 	dataFromP2p50P.C4bCounterpartyPartialSignedData.Hex = aliceSignedData.C4bCounterpartyCompleteSignedHex
 
 	if tool.CheckIsString(&dataFromP2p50P.C4aRdPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(false, aliceSignedData.C4aRdCompleteSignedHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(aliceSignedData.C4aRdCompleteSignedHex, 2); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c4a_rd_complete_signed_hex")
 			log.Println(err)
 			return nil, err
@@ -983,7 +995,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 	bobSignedRsmcHex := aliceSignedData.C4bRsmcCompleteSignedHex
 
 	//region create RD tx for bob
-	bobMultiAddr, err := rpcClient.CreateMultiSig(2, []string{dataFromP2p50P.CloseeCurrRsmcTempAddressPubKey, myChannelPubKey})
+	bobMultiAddr, err := omnicore.CreateMultiSig(2, []string{dataFromP2p50P.CloseeCurrRsmcTempAddressPubKey, myChannelPubKey})
 	if err != nil {
 		return nil, err
 	}
@@ -1002,7 +1014,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 			return nil, err
 		}
 
-		c2bRdHexData, err := rpcClient.OmniCreateRawTransactionUseUnsendInput(
+		c2bRdHexData, err := omnicore.OmniCreateRawTransactionUseUnsendInput(
 			cnbRsmcMultiAddress,
 			rsmcOutputs,
 			partnerChannelAddress,
@@ -1034,7 +1046,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 		bobCommitmentTx.RSMCRedeemScript = cnbRsmcRedeemScript
 		bobCommitmentTx.RSMCMultiAddressScriptPubKey = cnbRsmcMultiAddressScriptPubKey
 		bobCommitmentTx.RSMCTxHex = bobSignedRsmcHex
-		bobCommitmentTx.RSMCTxid = rpcClient.GetTxId(dataFromP2p50P.C4bRsmcPartialSignedData.Hex)
+		bobCommitmentTx.RSMCTxid = omnicore.GetTxId(dataFromP2p50P.C4bRsmcPartialSignedData.Hex)
 		bobCommitmentTx.AmountToRSMC = latestCommitmentTxInfo.AmountToCounterparty
 		c2bBrHexData, err := createCurrCommitmentTxRawBR(tx, dao.BRType_Rmsc, channelInfo, bobCommitmentTx, rsmcOutputs, myChannelAddress, user)
 		if err != nil {
@@ -1055,11 +1067,13 @@ func (service *htlcCloseTxManager) OnAliceSignedCxb(msg bean.RequestMessage, use
 	_ = tx.Commit()
 	needAliceSignRdTxForC4b.SendeeNodeAddress = dataFromP2p50P.SendeeNodeAddress
 	needAliceSignRdTxForC4b.SendeePeerId = dataFromP2p50P.SendeePeerId
+	log.Println("htlc close step 7 end", time.Now())
 	return needAliceSignRdTxForC4b, nil
 }
 
 // step8 alice 100113 Alice完成对Cxb的Rd和Br的签名 并推送51号协议
 func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage, user bean.User) (toAlice, toBob interface{}, err error) {
+	log.Println("htlc close step 8 begin", time.Now())
 	aliceSignedRdTxForCnb := bean.AliceSignedRdTxForC4b{}
 	_ = json.Unmarshal([]byte(msg.Data), &aliceSignedRdTxForCnb)
 
@@ -1117,44 +1131,30 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 	aliceData := make(map[string]interface{})
 	aliceData["channel_id"] = dataFromP2p50P.ChannelId
 
-	var c2aRsmcTestResult string
 	var c2aSignedRsmcHex = dataFromP2p50P.C4aRsmcCompleteSignedHex
 	if tool.CheckIsString(&c2aSignedRsmcHex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, c2aSignedRsmcHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(c2aSignedRsmcHex, 2); pass == false {
 			return nil, nil, errors.New(enum.Tips_common_wrong + "c4a_rsmc_complete_signed_hex")
-		}
-		c2aRsmcTestResult, err = rpcClient.TestMemPoolAccept(c2aSignedRsmcHex)
-		if err != nil {
-			err = errors.New("wrong signedRsmcHex")
-			log.Println(err)
-			return nil, nil, err
 		}
 	}
 
 	var signedToCounterpartyHex = dataFromP2p50P.C4aCounterpartyCompleteSignedHex
-	var toCounterpartyTestResult string
 	if tool.CheckIsString(&signedToCounterpartyHex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, signedToCounterpartyHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(signedToCounterpartyHex, 2); pass == false {
 			return nil, nil, errors.New(enum.Tips_common_wrong + "c4a_counterparty_complete_signed_hex")
-		}
-		toCounterpartyTestResult, err = rpcClient.TestMemPoolAccept(signedToCounterpartyHex)
-		if err != nil {
-			err = errors.New("wrong signedToOtherHex")
-			log.Println(err)
-			return nil, nil, err
 		}
 	}
 
 	var aliceRdHex = dataFromP2p50P.C4aRdPartialSignedData.Hex
 	if tool.CheckIsString(&aliceRdHex) {
-		if pass, _ := rpcClient.CheckMultiSign(false, aliceRdHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(aliceRdHex, 2); pass == false {
 			return nil, nil, errors.New(enum.Tips_common_wrong + "c4a_rd_signed_hex")
 		}
 	}
 
 	var bobRsmcHex = dataFromP2p50P.C4bRsmcPartialSignedData.Hex
 	if tool.CheckIsString(&bobRsmcHex) {
-		if pass, _ := rpcClient.CheckMultiSign(true, bobRsmcHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(bobRsmcHex, 2); pass == false {
 			return nil, nil, errors.New(enum.Tips_common_wrong + "c4b_rsmc_signed_hex")
 		}
 	}
@@ -1168,7 +1168,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 
 	var c2bToCounterpartyTxHex = dataFromP2p50P.C4bCounterpartyPartialSignedData.Hex
 	if len(c2bToCounterpartyTxHex) > 0 {
-		if pass, _ := rpcClient.CheckMultiSign(true, c2bToCounterpartyTxHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(c2bToCounterpartyTxHex, 2); pass == false {
 			return nil, nil, errors.New(enum.Tips_common_wrong + "c4b_counterparty_tx_data_hex")
 		}
 	}
@@ -1211,7 +1211,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 
 	if tool.CheckIsString(&c2aSignedRsmcHex) {
 		latestCommitmentTxInfo.RSMCTxHex = c2aSignedRsmcHex
-		latestCommitmentTxInfo.RSMCTxid = gjson.Parse(c2aRsmcTestResult).Array()[0].Get("txid").Str
+		latestCommitmentTxInfo.RSMCTxid = omnicore.GetTxId(c2aSignedRsmcHex)
 
 		// 保存Rd交易
 		err = saveRdTx(tx, channelInfo, c2aSignedRsmcHex, aliceRdHex, latestCommitmentTxInfo, myChannelAddress, &user)
@@ -1225,7 +1225,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 
 	if tool.CheckIsString(&signedToCounterpartyHex) {
 		latestCommitmentTxInfo.ToCounterpartyTxHex = signedToCounterpartyHex
-		latestCommitmentTxInfo.ToCounterpartyTxid = gjson.Parse(toCounterpartyTestResult).Array()[0].Get("txid").Str
+		latestCommitmentTxInfo.ToCounterpartyTxid = omnicore.GetTxId(signedToCounterpartyHex)
 	}
 
 	//重新生成交易id
@@ -1243,35 +1243,32 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 	channelInfo.CurrState = dao.ChannelState_CanUse
 	_ = tx.Update(channelInfo)
 
-	//返回给alice的数据
-	aliceData["latest_commitment_tx_info"] = latestCommitmentTxInfo
-
 	//处理对方的数据
 	bobData := bean.AliceSignedC4bTxDataP2p{}
 	bobData.C4aCommitmentTxHash = dataFromP2p50P.CloserCommitmentTxHash
 
-	//Cnb rsmc hex
-	cnbSignedRsmcHex := dataFromP2p50P.C4bRsmcPartialSignedData.Hex
-	if len(cnbSignedRsmcHex) > 0 {
-		if pass, _ := rpcClient.CheckMultiSign(true, cnbSignedRsmcHex, 2); pass == false {
-			return nil, nil, errors.New(enum.Tips_common_wrong + "c4b_rsmc_tx_data_hex")
-		}
-		err = checkBobRemcData(cnbSignedRsmcHex, latestCommitmentTxInfo)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	bobData.C4bRsmcCompleteSignedHex = cnbSignedRsmcHex
-
-	//region create RD tx for bob
-	c2bMultiAddr, err := rpcClient.CreateMultiSig(2, []string{bobCurrTempAddressPubKey, myChannelPubKey})
+	c2bMultiAddr, err := omnicore.CreateMultiSig(2, []string{bobCurrTempAddressPubKey, myChannelPubKey})
 	if err != nil {
 		return nil, nil, err
 	}
 	cnbRsmcMultiAddress := gjson.Get(c2bMultiAddr, "address").String()
 	cnbRsmcRedeemScript := gjson.Get(c2bMultiAddr, "redeemScript").String()
 	cnbRsmcMultiAddressScriptPubKey := gjson.Get(c2bMultiAddr, "scriptPubKey").String()
+
+	//Cnb rsmc hex
+	cnbSignedRsmcHex := dataFromP2p50P.C4bRsmcPartialSignedData.Hex
+	if len(cnbSignedRsmcHex) > 0 {
+		if pass, _ := omnicore.CheckMultiSign(cnbSignedRsmcHex, 2); pass == false {
+			return nil, nil, errors.New(enum.Tips_common_wrong + "c4b_rsmc_tx_data_hex")
+		}
+		err = checkBobRsmcData(cnbSignedRsmcHex, cnbRsmcMultiAddress, latestCommitmentTxInfo)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	bobData.C4bRsmcCompleteSignedHex = cnbSignedRsmcHex
+
+	//region create RD tx for bob
 
 	if len(cnbSignedRsmcHex) > 0 {
 		cnbRsmcOutputs, err := getInputsForNextTxByParseTxHashVout(
@@ -1284,7 +1281,7 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 			return nil, nil, err
 		}
 
-		c2bRdHexData, err := rpcClient.OmniCreateRawTransactionUseUnsendInput(
+		c2bRdHexData, err := omnicore.OmniCreateRawTransactionUseUnsendInput(
 			cnbRsmcMultiAddress,
 			cnbRsmcOutputs,
 			partnerChannelAddress,
@@ -1320,11 +1317,16 @@ func (service *htlcCloseTxManager) OnAliceSignedCxbBubTx(msg bean.RequestMessage
 
 	bobData.C4bCounterpartyCompleteSignedHex = c2bToCounterpartyTxHex
 	bobData.ChannelId = channelId
+	//返回给alice的数据
+	aliceData["latest_commitment_tx_info"] = latestCommitmentTxInfo
+
+	log.Println("htlc close step 8 end", time.Now())
 	return aliceData, bobData, nil
 }
 
 // step9 obd 51 推送110051号协议消息到bob
 func (service *htlcCloseTxManager) OnObdOfBobGet51PData(data string, user bean.User) (toBob interface{}, err error) {
+	log.Println("htlc close step 9 begin", time.Now())
 	dataFrom51P := bean.AliceSignedC4bTxDataP2p{}
 	err = json.Unmarshal([]byte(data), &dataFrom51P)
 	if err != nil {
@@ -1339,11 +1341,13 @@ func (service *htlcCloseTxManager) OnObdOfBobGet51PData(data string, user bean.U
 	needBobSignRdTxData := bean.NeedBobSignRdTxForC4b{}
 	needBobSignRdTxData.ChannelId = dataFrom51P.ChannelId
 	needBobSignRdTxData.C4bRdPartialSignedData = dataFrom51P.C4bRdPartialSignedData
+	log.Println("htlc close step 9 end", time.Now())
 	return needBobSignRdTxData, nil
 }
 
 // step10 bob 110114 bob完成Cxb的Rd的签名
 func (service *htlcCloseTxManager) OnBobSignedCxbSubTx(msg bean.RequestMessage, user bean.User) (toBob interface{}, err error) {
+	log.Println("htlc close step 10 begin", time.Now())
 	bobSignedRdData := bean.BobSignedRdTxForC4b{}
 	_ = json.Unmarshal([]byte(msg.Data), &bobSignedRdData)
 
@@ -1353,7 +1357,7 @@ func (service *htlcCloseTxManager) OnBobSignedCxbSubTx(msg bean.RequestMessage, 
 	}
 
 	if tool.CheckIsString(&dataFrom51P.C4bRdPartialSignedData.Hex) {
-		if pass, _ := rpcClient.CheckMultiSign(false, bobSignedRdData.C4bRdCompleteSignedHex, 2); pass == false {
+		if pass, _ := omnicore.CheckMultiSign(bobSignedRdData.C4bRdCompleteSignedHex, 2); pass == false {
 			err = errors.New(enum.Tips_common_wrong + "signed c4b_rd_complete_signed_hex")
 			log.Println(err)
 			return nil, err
@@ -1397,12 +1401,8 @@ func (service *htlcCloseTxManager) OnBobSignedCxbSubTx(msg bean.RequestMessage, 
 	}
 
 	if tool.CheckIsString(&signedRsmcHex) {
-		decodeRsmcHex, err := rpcClient.OmniDecodeTransaction(signedRsmcHex)
-		if err != nil {
-			return nil, err
-		}
 		latestCommitmentTxInfo.RSMCTxHex = signedRsmcHex
-		latestCommitmentTxInfo.RSMCTxid = gjson.Get(decodeRsmcHex, "txid").Str
+		latestCommitmentTxInfo.RSMCTxid = omnicore.GetTxId(signedRsmcHex)
 		err = saveRdTx(tx, channelInfo, signedRsmcHex, c2bSignedRdHex, latestCommitmentTxInfo, myChannelAddress, &user)
 		if err != nil {
 			return nil, err
@@ -1410,12 +1410,8 @@ func (service *htlcCloseTxManager) OnBobSignedCxbSubTx(msg bean.RequestMessage, 
 	}
 
 	if tool.CheckIsString(&signedToCounterpartyTxHex) {
-		decodeSignedToCounterpartyHex, err := rpcClient.OmniDecodeTransaction(signedToCounterpartyTxHex)
-		if err != nil {
-			return nil, err
-		}
 		latestCommitmentTxInfo.ToCounterpartyTxHex = signedToCounterpartyTxHex
-		latestCommitmentTxInfo.ToCounterpartyTxid = gjson.Get(decodeSignedToCounterpartyHex, "txid").Str
+		latestCommitmentTxInfo.ToCounterpartyTxid = omnicore.GetTxId(signedToCounterpartyTxHex)
 	}
 
 	latestCommitmentTxInfo.CurrState = dao.TxInfoState_CreateAndSign
@@ -1447,6 +1443,6 @@ func (service *htlcCloseTxManager) OnBobSignedCxbSubTx(msg bean.RequestMessage, 
 	//同步通道信息到tracker
 	sendChannelStateToTracker(*channelInfo, *latestCommitmentTxInfo)
 
-	log.Println("htlc end", time.Now())
+	log.Println("htlc close step 10 end", time.Now())
 	return latestCommitmentTxInfo, nil
 }

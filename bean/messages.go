@@ -5,15 +5,11 @@ import (
 	"github.com/omnilaboratory/obd/bean/enum"
 )
 
-var CurrObdNodeInfo obdNodeInfo
+var CurrObdNodeInfo ObdNodeInfo
 
-type obdNodeInfo struct {
-	ChainNetworkType string `json:"chain_network_type"`
-	OmniCoreVersion  string `json:"omni_core_version"`
-	BtcCoreVersion   string `json:"btc_core_version"`
-	TrackerNodeId    string `json:"tracker_node_id"`
-	P2pAddress       string `json:"p2p_address"`
-	WebsocketLink    string `json:"websocket_link"`
+type ObdNodeInfo struct {
+	P2pAddress    string `json:"p2p_address"`
+	WebsocketLink string `json:"websocket_link"`
 }
 
 //obd客户端请求消息体
@@ -280,4 +276,9 @@ type NeedClientSignTxData struct {
 type NeedClientSignRawBRTxData struct {
 	NeedClientSignTxData
 	BrId int `json:"br_id"`
+}
+
+type RawTxInputItem struct {
+	ScriptPubKey string `json:"scriptPubKey"`
+	RedeemScript string `json:"redeem_script"`
 }

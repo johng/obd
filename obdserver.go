@@ -12,7 +12,6 @@ import (
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/config"
 	"github.com/omnilaboratory/obd/lightclient"
-	"github.com/omnilaboratory/obd/rpc"
 	"github.com/omnilaboratory/obd/service"
 	"github.com/omnilaboratory/obd/tool"
 )
@@ -43,19 +42,11 @@ func initObdLog() {
 // gox -os "windows linux darwin" -arch amd64
 // gox -os "linux" -arch amd64
 func main() {
+	config.Init()
 	initObdLog()
-
-	err := rpc.NewClient().CheckVersion()
-	if err != nil {
-		log.Println(err)
-		log.Println("because get wrong omniCore version, obd fail to start")
-		return
-	}
-
 	//tracker
-	err = lightclient.ConnectToTracker()
+	err := lightclient.ConnectToTracker()
 	if err != nil {
-		log.Println(err)
 		log.Println("because fail to connect to tracker, obd fail to start")
 		return
 	}
@@ -68,7 +59,7 @@ func main() {
 		return
 	}
 
-	routersInit := lightclient.InitRouter(nil)
+	routersInit := lightclient.InitRouter()
 	addr := ":" + strconv.Itoa(config.ServerPort)
 	server := &http.Server{
 		Addr:           addr,
@@ -82,13 +73,10 @@ func main() {
 
 	service.Start(nodeId)
 
-	//synData to tracker
-	go lightclient.SynData()
-
 	// Timer
 	service.ScheduleService.StartSchedule()
 
-	log.Println("obd " + nodeId + " start at  " + config.P2P_hostIp + ":" + strconv.Itoa(config.ServerPort) + " in " + config.ChainNode_Type)
+	log.Println("obd " + nodeId + " start in " + config.ChainNodeType)
 	log.Println("wsAddress: " + bean.CurrObdNodeInfo.WebsocketLink)
 	log.Fatal(server.ListenAndServe())
 }

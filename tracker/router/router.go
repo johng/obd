@@ -1,58 +1,71 @@
-package tracker
+package router
 
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/omnilaboratory/obd/rpc"
 	"github.com/omnilaboratory/obd/tracker/service"
 	"github.com/satori/go.uuid"
-	"github.com/tidwall/gjson"
-	"log"
 	"net/http"
 	"strings"
 )
 
 func InitRouter() *gin.Engine {
-	gin.SetMode(gin.DebugMode)
+	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 	router.Use(cors())
-	err := getBtcChainInfo()
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
 	go service.ObdNodeManager.TrackerStart()
 	router.GET("/ws", wsClientConnect)
 
-	apiv1 := router.Group("/api/v1")
+	apiv1 := router.Group("/api/v1/")
 	{
-		apiv1.GET("/getHtlcTxState", service.HtlcService.GetHtlcCurrState)
-		apiv1.GET("/getChannelState", service.ChannelService.GetChannelState)
-		apiv1.GET("/checkChainType", service.NodeAccountService.InitNodeAndCheckChainType)
-		apiv1.GET("/getUserState", service.NodeAccountService.GetUserState)
-		apiv1.GET("/getNodeDbId", service.NodeAccountService.GetNodeDbIdByNodeId)
-		apiv1.GET("/getNodeInfoByP2pAddress", service.NodeAccountService.GetNodeInfoByP2pAddress)
+		apiv1.GET("GetHtlcCurrState", service.HtlcService.GetHtlcCurrState)
+		apiv1.GET("getChannelState", service.ChannelService.GetChannelState)
+		apiv1.GET("getUserState", service.NodeAccountService.GetUserState)
+		apiv1.GET("getNodeInfoByP2pAddress", service.NodeAccountService.GetNodeInfoByP2pAddress)
 	}
-	apiv2 := router.Group("/api/common")
+	apiv2 := router.Group("/api/common/")
 	{
-		apiv2.GET("/getObdNodes", service.NodeAccountService.GetAllObdNodes)
-		apiv2.GET("/getUsers", service.NodeAccountService.GetAllUsers)
-		apiv2.GET("/getChannels", service.ChannelService.GetChannels)
+		apiv2.GET("getObdNodes", service.NodeAccountService.GetAllObdNodes)
+		apiv2.GET("getUsers", service.NodeAccountService.GetAllUsers)
+		apiv2.GET("getChannels", service.ChannelService.GetChannels)
+	}
+
+	apiv3 := router.Group("/api/rpc/")
+	{
+		apiv3.GET("getChainNodeType", service.RpcService.GetChainNodeType)
+		apiv3.GET("getBlockCount", service.RpcService.GetBlockCount)
+		apiv3.GET("getOmniBalance", service.RpcService.GetOmniBalance)
+		apiv3.GET("getBalanceByAddress", service.RpcService.GetBalanceByAddress)
+		apiv3.GET("importAddress", service.RpcService.ImportAddress)
+		apiv3.GET("listReceivedByAddress", service.RpcService.ListReceivedByAddress)
+		apiv3.GET("getTransactionById", service.RpcService.GetTransactionById)
+		apiv3.GET("omniGettransaction", service.RpcService.OmniGettransaction)
+		apiv3.GET("omniGetProperty", service.RpcService.OmniGetProperty)
+		apiv3.POST("createRawTransaction", service.RpcService.CreateRawTransaction)
+		apiv3.GET("estimateSmartFee", service.RpcService.EstimateSmartFee)
+		apiv3.GET("listUnspent", service.RpcService.ListUnspent)
+		apiv3.GET("omniGetAllBalancesForAddress", service.RpcService.OmniGetAllBalancesForAddress)
+		apiv3.GET("omniGetBalancesForAddress", service.RpcService.OmniGetBalancesForAddress)
+		apiv3.GET("testMemPoolAccept", service.RpcService.TestMemPoolAccept)
+		apiv3.GET("sendRawTransaction", service.RpcService.SendRawTransaction)
+		apiv3.GET("omniDecodeTransaction", service.RpcService.OmniDecodeTransaction)
+		apiv3.GET("omniListTransactions", service.RpcService.OmniListTransactions)
+		apiv3.GET("getNewAddress", service.RpcService.GetNewAddress)
+		apiv3.GET("omniSend", service.RpcService.OmniSend)
+		apiv3.GET("omniListProperties", service.RpcService.OmniListProperties)
+		apiv3.GET("omniSendIssuanceFixed", service.RpcService.OmniSendIssuanceFixed)
+		apiv3.GET("omniSendIssuanceManaged", service.RpcService.OmniSendIssuanceManaged)
+		apiv3.GET("omniSendGrant", service.RpcService.OmniSendGrant)
+		apiv3.GET("omniSendRevoke", service.RpcService.OmniSendRevoke)
+		apiv3.GET("btcSignRawTransactionFromJson", service.RpcService.BtcSignRawTransactionFromJson)
+		apiv3.GET("getMiningInfo", service.RpcService.GetMiningInfo)
+		apiv3.GET("getNetworkInfo", service.RpcService.GetNetworkInfo)
 	}
 
 	return router
-}
-
-func getBtcChainInfo() (err error) {
-	result, err := rpc.NewClient().GetBlockChainInfo()
-	if err != nil {
-		return err
-	}
-	service.ChannelService.BtcChainType = gjson.Get(result, "chain").Str
-	return nil
 }
 
 //跨域

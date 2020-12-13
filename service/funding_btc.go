@@ -7,8 +7,9 @@ import (
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/bean/enum"
 	"github.com/omnilaboratory/obd/config"
+	"github.com/omnilaboratory/obd/conn"
 	"github.com/omnilaboratory/obd/dao"
-	"github.com/omnilaboratory/obd/rpc"
+	"github.com/omnilaboratory/obd/omnicore"
 	"github.com/omnilaboratory/obd/tool"
 	"github.com/tidwall/gjson"
 	"log"
@@ -41,7 +42,7 @@ func (service *fundingTransactionManager) BtcFundingCreated(msg bean.RequestMess
 		return nil, "", err
 	}
 
-	btcFeeTxHexDecode, err := rpcClient.DecodeRawTransaction(reqData.FundingTxHex)
+	btcFeeTxHexDecode, err := omnicore.DecodeBtcRawTransaction(reqData.FundingTxHex)
 	if err != nil {
 		err = errors.New(enum.Tips_funding_failDecodeRawTransaction + " funding_tx_hex: " + err.Error())
 		log.Println(err)
@@ -73,8 +74,9 @@ func (service *fundingTransactionManager) BtcFundingCreated(msg bean.RequestMess
 	}
 
 	//check btc funding time
-	result, err := rpcClient.ListReceivedByAddress(channelInfo.ChannelAddress)
-	if err == nil {
+	result := conn2tracker.ListReceivedByAddress(channelInfo.ChannelAddress)
+
+	if result != "" {
 		if len(gjson.Parse(result).Array()) > 0 {
 			btcFundingTimes := len(gjson.Parse(result).Array()[0].Get("txids").Array())
 			if btcFundingTimes >= config.BtcNeedFundTimes {
@@ -134,8 +136,8 @@ func (service *fundingTransactionManager) BtcFundingCreated(msg bean.RequestMess
 		Reverse().
 		First(latestBtcFundingRequest)
 	if latestBtcFundingRequest.Id > 0 && latestBtcFundingRequest.TxId != fundingTxid {
-		result, err = rpcClient.TestMemPoolAccept(latestBtcFundingRequest.TxHash)
-		if err == nil {
+		result = conn2tracker.TestMemPoolAccept(latestBtcFundingRequest.TxHash)
+		if result != "" {
 			allowed := gjson.Parse(result).Get("allowed").Bool()
 			if allowed == false {
 				latestBtcFundingRequest.IsFinish = true
@@ -180,16 +182,16 @@ func (service *fundingTransactionManager) BtcFundingCreated(msg bean.RequestMess
 		}
 
 		// 创建一个btc赎回交易 ，alice首先签名
-		needAliceSignData, err = rpcClient.BtcCreateRawTransactionForUnsendInputTx(
+		needAliceSignData, err = omnicore.BtcCreateRawTransactionForUnsendInputTx(
 			channelInfo.ChannelAddress,
-			[]rpc.TransactionInputItem{
+			[]bean.TransactionInputItem{
 				{
 					Txid:         fundingBtcRequest.TxId,
 					Vout:         vout,
 					Amount:       amount,
 					ScriptPubKey: channelInfo.ChannelAddressScriptPubKey},
 			},
-			[]rpc.TransactionOutputItem{
+			[]bean.TransactionOutputItem{
 				{
 					ToBitCoinAddress: redeemToAddress,
 					Amount:           fundingBtcRequest.Amount},
@@ -227,16 +229,16 @@ func (service *fundingTransactionManager) BtcFundingCreated(msg bean.RequestMess
 
 		// 如果在前面的步骤，已经创建了minerFeeRedeemTransaction，但是没有完成签名，需要继续发起签名逻辑
 		if len(minerFeeRedeemTransaction.Txid) == 0 {
-			needAliceSignData, err = rpcClient.BtcCreateRawTransactionForUnsendInputTx(
+			needAliceSignData, err = omnicore.BtcCreateRawTransactionForUnsendInputTx(
 				channelInfo.ChannelAddress,
-				[]rpc.TransactionInputItem{
+				[]bean.TransactionInputItem{
 					{
 						Txid:         fundingBtcRequest.TxId,
 						Vout:         vout,
 						Amount:       amount,
 						ScriptPubKey: channelInfo.ChannelAddressScriptPubKey},
 				},
-				[]rpc.TransactionOutputItem{
+				[]bean.TransactionOutputItem{
 					{
 						ToBitCoinAddress: redeemToAddress,
 						Amount:           fundingBtcRequest.Amount},
@@ -310,7 +312,7 @@ func (service *fundingTransactionManager) OnAliceSignBtcFundingMinerFeeRedeemTx(
 		return nil, "", errors.New("empty hex")
 	}
 	hex := gjson.Get(jsonObj, "hex").Str
-	resultDecode, err := rpcClient.DecodeRawTransaction(hex)
+	resultDecode, err := omnicore.DecodeBtcRawTransaction(hex)
 	if err != nil {
 		return nil, "", err
 	}
@@ -323,16 +325,12 @@ func (service *fundingTransactionManager) OnAliceSignBtcFundingMinerFeeRedeemTx(
 		return nil, "", errors.New("not found the temp data, please send -100340 again")
 	}
 
-	_, err = rpcClient.CheckMultiSign(false, hex, 1)
+	_, err = omnicore.CheckMultiSign(hex, 1)
 	if err != nil {
 		return nil, "", err
 	}
 
-	result, err := rpcClient.TestMemPoolAccept(hex)
-	if err != nil {
-		return nil, "", err
-	}
-	txid := gjson.Parse(result).Array()[0].Get("txid").Str
+	txid := omnicore.GetTxId(hex)
 	if len(txid) == 0 {
 		return nil, "", errors.New("fail to test the hex")
 	}
@@ -470,7 +468,7 @@ func (service *fundingTransactionManager) BeforeSignBtcFundingCreatedAtBobSide(d
 		funder = channelInfo.PeerIdB
 	}
 
-	btcFeeTxHexDecode, err := rpcClient.DecodeRawTransaction(fundingBtcHex)
+	btcFeeTxHexDecode, err := omnicore.DecodeBtcRawTransaction(fundingBtcHex)
 	if err != nil {
 		err = errors.New(enum.Tips_funding_failDecodeRawTransaction + " funding_btc_hex " + err.Error())
 		log.Println(err)
@@ -551,7 +549,7 @@ func (service *fundingTransactionManager) FundingBtcTxSigned(msg bean.RequestMes
 			return nil, "", err
 		}
 
-		_, err = rpcClient.CheckMultiSign(false, reqData.SignedMinerRedeemTransactionHex, 2)
+		_, err = omnicore.CheckMultiSign(reqData.SignedMinerRedeemTransactionHex, 2)
 		if err != nil {
 			return nil, "", err
 		}
@@ -623,13 +621,13 @@ func (service *fundingTransactionManager) FundingBtcTxSigned(msg bean.RequestMes
 		return node, funder, nil
 	}
 
-	result, err := rpcClient.DecodeRawTransaction(fundingBtcRequest.RedeemHex)
+	result, err := omnicore.DecodeBtcRawTransaction(fundingBtcRequest.RedeemHex)
 	if err != nil {
 		return nil, "", err
 	}
 	minerOutAmount := gjson.Get(result, "vout").Array()[0].Get("value").Float()
 
-	resultDecode, err := rpcClient.DecodeRawTransaction(reqData.SignedMinerRedeemTransactionHex)
+	resultDecode, err := omnicore.DecodeBtcRawTransaction(reqData.SignedMinerRedeemTransactionHex)
 	if err != nil {
 		return nil, "", err
 	}
@@ -638,7 +636,7 @@ func (service *fundingTransactionManager) FundingBtcTxSigned(msg bean.RequestMes
 	}
 
 	//赎回交易签名成功后，广播交易
-	_, err = rpcClient.SendRawTransaction(fundingBtcRequest.TxHash)
+	_, err = conn2tracker.SendRawTransaction(fundingBtcRequest.TxHash)
 	if err != nil {
 		if strings.Contains(err.Error(), "Transaction already in block chain") == false {
 			return nil, funder, err
@@ -770,15 +768,12 @@ func (service *fundingTransactionManager) AfterBobSignBtcFundingAtAliceSide(data
 	return fundingBtcRequest, nil
 }
 
-func checkHexOutputAddressFromOmniDecode(hexDecode string, inputs []rpc.TransactionInputItem, toAddress string) string {
-	result, err := rpcClient.OmniDecodeTransactionWithPrevTxs(hexDecode, inputs)
+func checkHexOutputAddressFromOmniDecode(hexDecode string, toAddress string) string {
+	_, err := omnicore.VerifyOmniTxHexOutAddress(hexDecode, toAddress)
 	if err != nil {
 		return ""
 	}
-	if gjson.Parse(result).Get("referenceaddress").String() == toAddress {
-		return gjson.Parse(result).Get("txid").String()
-	}
-	return ""
+	return omnicore.GetTxId(hexDecode)
 }
 
 func (service *fundingTransactionManager) BtcFundingAllItem(user bean.User) (node []dao.FundingBtcRequest, err error) {

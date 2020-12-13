@@ -2,7 +2,6 @@ package service
 
 import (
 	"github.com/omnilaboratory/obd/bean"
-	"github.com/omnilaboratory/obd/rpc"
 )
 
 type commitmentTxOutputBean struct {
@@ -16,9 +15,5 @@ type commitmentTxOutputBean struct {
 }
 
 var P2PLocalPeerId string
-var rpcClient *rpc.Client
-
-//for store the privateKey
-var tempAddrPrivateKeyMap = make(map[string]string)
 
 var OnlineUserMap = make(map[string]*bean.User)
