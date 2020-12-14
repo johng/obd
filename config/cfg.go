@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,5 +86,7 @@ func Init() {
 	}
 
 	RawTrackerHost := tracker.Key("host").MustString("localhost:60060")
-	TrackerHost = parseHostname(RawTrackerHost)
+	RawHostIP := strings.Split(RawTrackerHost, ":")
+	ParseHostname := parseHostname(RawHostIP[0])
+	TrackerHost = ParseHostname + ":" + RawHostIP[1]
 }

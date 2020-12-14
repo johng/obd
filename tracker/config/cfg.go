@@ -70,7 +70,10 @@ func init() {
 		log.Println(err)
 		return
 	}
-	ChainNode_Host = parseHostname(chainNode.Key("host").String())
+
+	RawHostIP := strings.Split(chainNode.Key("host").String(), ":")
+	ParseHostname := parseHostname(RawHostIP[0])
+	ChainNode_Host = ParseHostname + ":" + RawHostIP[1]
 	ChainNode_User = chainNode.Key("user").String()
 	ChainNode_Pass = chainNode.Key("pass").String()
 	if len(ChainNode_Host) == 0 {
