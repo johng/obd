@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 )
 
 type P2PChannel struct {
