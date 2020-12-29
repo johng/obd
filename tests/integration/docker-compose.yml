@@ -12,7 +12,7 @@ services:
         volumes:
             - ${PWD}/conf.ini.alice:/go/conf.ini
         build: 
-            context: ./omnibolt
+            context: .
             dockerfile: omnibolt.Dockerfile
         depends_on:
             - omnicore
@@ -25,7 +25,7 @@ services:
         volumes:
             - ${PWD}/conf.ini.bob:/go/conf.ini
         build: 
-            context: ./omnibolt
+            context: .
             dockerfile: omnibolt.Dockerfile
 
         expose:
@@ -36,7 +36,7 @@ services:
             - omnicore
     omnitest:
         build: 
-            context: ./omnitest
+            context: .
             dockerfile: Dockerfile
         depends_on: 
             - omnibolt_bob
