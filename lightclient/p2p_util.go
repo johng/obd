@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
+	discovery "github.com/libp2p/go-libp2p-discovery"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/omnilaboratory/obd/bean"
 	"github.com/omnilaboratory/obd/config"
@@ -19,7 +22,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
-	"time"
+	"sync"
 )
 
 type P2PChannel struct {
@@ -29,7 +32,11 @@ type P2PChannel struct {
 	rw             *bufio.ReadWriter
 }
 
-const pid = "/chat/1.0.0"
+const obdRendezvousString = "obd meet at tracker"
+const protocolIdForBetweenObd = "obd/betweenObd/1.0.1"
+const protocolIdForScanObd = "obd/forScanObd/1.0.1"
+
+var hostNode host.Host
 
 var localServerDest string
 var p2PLocalPeerId string
@@ -49,18 +56,22 @@ func generatePrivateKey() (crypto.PrivKey, error) {
 	return privateKey, nil
 }
 
-func StartP2PServer() (err error) {
+func StartP2PNode() (err error) {
+
+	log.Println("start to p2p node")
 	prvKey, err := generatePrivateKey()
 	if err != nil {
 		return err
 	}
+
 	// 0.0.0.0 will listen on any interface device.
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", config.P2P_sourcePort))
 
+	ctx := context.Background()
 	// libp2p.New constructs a new libp2p Host.
 	// Other options can be added here.
-	host, err := libp2p.New(
-		context.Background(),
+	hostNode, err = libp2p.New(
+		ctx,
 		libp2p.ListenAddrs(sourceMultiAddr),
 		libp2p.Identity(prvKey),
 	)
@@ -69,63 +80,91 @@ func StartP2PServer() (err error) {
 		return err
 	}
 	p2pChannelMap = make(map[string]*P2PChannel)
-	p2PLocalPeerId = host.ID().Pretty()
+	p2PLocalPeerId = hostNode.ID().Pretty()
 	service.P2PLocalPeerId = p2PLocalPeerId
 
-	localServerDest = fmt.Sprintf("/ip4/%s/tcp/%v/p2p/%s", config.P2P_hostIp, config.P2P_sourcePort, host.ID().Pretty())
+	localServerDest = fmt.Sprintf("/ip4/%s/tcp/%v/p2p/%s", config.P2P_hostIp, config.P2P_sourcePort, hostNode.ID().Pretty())
 	bean.CurrObdNodeInfo.P2pAddress = localServerDest
+	log.Println("local p2p address", localServerDest)
 
 	//把自己也作为终点放进去，阻止自己连接自己
 	p2pChannelMap[p2PLocalPeerId] = &P2PChannel{
 		IsLocalChannel: true,
 		Address:        localServerDest,
 	}
-	host.SetStreamHandler(pid, handleStream)
+	hostNode.SetStreamHandler(protocolIdForScanObd, handleScanStream)
+	hostNode.SetStreamHandler(protocolIdForBetweenObd, handleStream)
+
+	kademliaDHT, _ := dht.New(ctx, hostNode, dht.Mode(dht.ModeAuto))
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	err = kademliaDHT.Bootstrap(ctx)
+	if err != nil {
+		log.Println(err)
+	}
+
+	var wg sync.WaitGroup
+	for _, peerAddr := range config.BootstrapPeers {
+		peerInfo, _ := peer.AddrInfoFromP2pAddr(peerAddr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err = hostNode.Connect(ctx, *peerInfo)
+			if err != nil {
+				log.Println(err, peerInfo)
+			} else {
+				log.Println("connected to bootstrap node ", *peerInfo)
+			}
+		}()
+	}
+	wg.Wait()
+
+	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
+	discovery.Advertise(ctx, routingDiscovery, obdRendezvousString)
+
 	return nil
 }
 
-func connP2PServer(dest string) (string, error) {
+func connP2PNode(dest string) (string, error) {
 	if tool.CheckIsString(&dest) == false {
 		log.Println("wrong dest address")
 		return "", errors.New("wrong dest address")
 	}
 
-	sourceMultiAddr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", config.P2P_sourcePort))
-	prvKey, _ := generatePrivateKey()
-
-	host, err := libp2p.New(
-		context.Background(),
-		libp2p.ListenAddrs(sourceMultiAddr),
-		libp2p.Identity(prvKey),
-	)
-
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
 	destMaddr, err := multiaddr.NewMultiaddr(dest)
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
 
-	destHostInfo, err := peer.AddrInfoFromP2pAddr(destMaddr)
+	destHostPeerInfo, err := peer.AddrInfoFromP2pAddr(destMaddr)
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
-	if p2pChannelMap[destHostInfo.ID.Pretty()] != nil {
+
+	if destHostPeerInfo.ID == hostNode.ID() {
+		return "", errors.New("wrong dest address")
+	}
+
+	if p2pChannelMap[destHostPeerInfo.ID.Pretty()] != nil {
 		log.Println("Remote peer has been connected")
 		return " Remote peer has been connected", nil
 	}
-	host.Peerstore().AddAddrs(destHostInfo.ID, destHostInfo.Addrs, peerstore.PermanentAddrTTL)
-	s, err := host.NewStream(context.Background(), destHostInfo.ID, pid)
+
+	hostNode.Peerstore().AddAddrs(destHostPeerInfo.ID, destHostPeerInfo.Addrs, peerstore.PermanentAddrTTL)
+
+	stream, err := hostNode.NewStream(context.Background(), destHostPeerInfo.ID, protocolIdForBetweenObd)
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
-	rw := addP2PChannel(s)
-	go readData(s, rw)
+
+	rw := addP2PChannel(stream)
+	go readData(stream, rw)
 	return localServerDest, nil
 }
 
@@ -136,6 +175,12 @@ func handleStream(s network.Stream) {
 			rw := addP2PChannel(s)
 			go readData(s, rw)
 		}
+	}
+}
+
+func handleScanStream(s network.Stream) {
+	if s != nil {
+		log.Println("scan channel data request from tracker", s.Conn().RemotePeer().Pretty())
 	}
 }
 func readData(s network.Stream, rw *bufio.ReadWriter) {

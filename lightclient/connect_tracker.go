@@ -23,6 +23,7 @@ import (
 
 var conn *websocket.Conn
 var ticker3m *time.Ticker
+var isReset = true
 
 func ConnectToTracker() (err error) {
 
@@ -35,11 +36,17 @@ func ConnectToTracker() (err error) {
 		return err
 	}
 
-	result, err := conn2tracker.GetChainNodeType()
+	chainNodeType, trackerP2pAddress, err := conn2tracker.GetChainNodeType()
 	if err != nil {
 		return err
 	}
-	config.ChainNodeType = result
+	config.ChainNodeType = chainNodeType
+	config.BootstrapPeers, _ = config.StringsToAddrs(strings.Split(trackerP2pAddress, ","))
+
+	err = StartP2PNode()
+	if err != nil {
+		return err
+	}
 
 	if service.TrackerChan == nil {
 		service.TrackerChan = make(chan []byte)
@@ -54,8 +61,6 @@ func ConnectToTracker() (err error) {
 	}
 	return nil
 }
-
-var isReset = true
 
 func readDataFromWs() {
 	isReset = false

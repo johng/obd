@@ -47,6 +47,7 @@ func main() {
 		log.Println("because get wrong omniCore version, tracker fail to start")
 		return
 	}
+	service.StartP2PNode()
 
 	routersInit := router.InitRouter()
 	if routersInit == nil {

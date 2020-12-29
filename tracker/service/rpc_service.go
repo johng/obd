@@ -605,8 +605,10 @@ func (manager *rpcManager) GetNetworkInfo(context *gin.Context) {
 }
 
 func (manager *rpcManager) GetChainNodeType(context *gin.Context) {
+
 	context.JSON(http.StatusOK, gin.H{
-		"msg":  "",
-		"data": cfg.ChainNode_Type,
+		"msg":               "",
+		"chainNodeType":     cfg.ChainNode_Type,
+		"trackerP2pAddress": cfg.P2pLocalAddress,
 	})
 }

@@ -18,6 +18,7 @@ func loginRetData(client Client) string {
 	retData["nodeAddress"] = client.User.P2PLocalAddress
 	retData["htlc_fee_rate"] = config.HtlcFeeRate
 	retData["htlc_max_fee"] = config.HtlcMaxFee
+	retData["chain_node_type"] = config.ChainNodeType
 	bytes, _ := json.Marshal(retData)
 	return string(bytes)
 }
@@ -88,7 +89,7 @@ func (client *Client) userModule(msg bean.RequestMessage) (enum.SendTargetType, 
 		if remoteNodeAddress.Exists() == false {
 			data = errors.New("remote_node_address not exist").Error()
 		} else {
-			localP2PAddress, err := connP2PServer(remoteNodeAddress.Str)
+			localP2PAddress, err := connP2PNode(remoteNodeAddress.Str)
 			if err != nil {
 				data = err.Error()
 			} else {

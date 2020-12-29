@@ -14,18 +14,31 @@ import (
 	"time"
 )
 
+var cacheBlock int
+var cacheBlockTime time.Time
+
 func GetBlockCount() (flag int) {
-	url := "http://" + config.TrackerHost + "/api/rpc/getBlockCount"
-	resp, err := http.Get(url)
-	if err != nil {
-		return 0
+	if cacheBlockTime.IsZero() == false {
+		if time.Now().Sub(cacheBlockTime).Minutes() > 1 {
+			cacheBlock = 0
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return int(gjson.Get(string(body), "data").Int())
+	if cacheBlock == 0 {
+		url := "http://" + config.TrackerHost + "/api/rpc/getBlockCount"
+		log.Println(url)
+		resp, err := http.Get(url)
+		if err != nil {
+			cacheBlock = 0
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			body, _ := ioutil.ReadAll(resp.Body)
+			cacheBlock = int(gjson.Get(string(body), "data").Int())
+			cacheBlockTime = time.Now()
+		}
 	}
-	return 0
+
+	return cacheBlock
 }
 
 func GetOmniBalance(address string, propertyId int) (balance float64) {
@@ -527,22 +540,22 @@ func GetNetworkInfo() (result string, err error) {
 	}
 	return "", errors.New("error result")
 }
-func GetChainNodeType() (result string, err error) {
+func GetChainNodeType() (chainNodeType, trackerP2pAddress string, err error) {
 	url := "http://" + config.TrackerHost + "/api/rpc/getChainNodeType"
 	resp, err := http.Get(url)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		body, _ := ioutil.ReadAll(resp.Body)
 		err = nil
-		if gjson.Get(string(body), "data").Str == "" {
+		if gjson.Get(string(body), "chainNodeType").Str == "" {
 			err = errors.New(gjson.Get(string(body), "msg").Str)
 		}
-		return gjson.Get(string(body), "data").Str, err
+		return gjson.Get(string(body), "chainNodeType").Str, gjson.Get(string(body), "trackerP2pAddress").Str, err
 	}
-	return "", errors.New("error result")
+	return "", "", errors.New("error result")
 }
 
 func GetChannelState(channelId string) (flag int) {

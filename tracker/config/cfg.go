@@ -2,6 +2,7 @@ package cfg
 
 import (
 	"flag"
+	ma "github.com/multiformats/go-multiaddr"
 	"log"
 	"net"
 	"strings"
@@ -11,6 +12,19 @@ import (
 	"github.com/go-ini/ini"
 )
 
+type addrList []ma.Multiaddr
+
+func StringsToAddrs(addrStrings []string) (maddrs []ma.Multiaddr, err error) {
+	for _, addrString := range addrStrings {
+		addr, err := ma.NewMultiaddr(addrString)
+		if err != nil {
+			return maddrs, err
+		}
+		maddrs = append(maddrs, addr)
+	}
+	return
+}
+
 var (
 	//Cfg               *ini.File
 	configPath        = flag.String("trackerConfigPath", "tracker/config/conf.ini", "Config file path")
@@ -19,6 +33,11 @@ var (
 	TrackerServerPort = 60060
 
 	HtlcFeeRate = 0.0001
+
+	P2P_hostIp      = "127.0.0.1"
+	P2P_sourcePort  = 60801
+	BootstrapPeers  addrList
+	P2pLocalAddress = ""
 
 	ChainNode_Type = "test"
 	ChainNode_Host = "62.234.216.108:18332"
@@ -64,6 +83,17 @@ func init() {
 		return
 	}
 	HtlcFeeRate = htlcNode.Key("feeRate").MustFloat64(0.0001)
+
+	p2pNode, err := Cfg.GetSection("p2p")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	P2P_hostIp = p2pNode.Key("localHostIp").MustString("127.0.0.1")
+	P2P_sourcePort = p2pNode.Key("sourcePort").MustInt(60801)
+	bootstrapPeers := p2pNode.Key("bootstrapPeers").MustString("")
+	BootstrapPeers, _ = StringsToAddrs(strings.Split(bootstrapPeers, ","))
 
 	chainNode, err := Cfg.GetSection("chainNode")
 	if err != nil {
